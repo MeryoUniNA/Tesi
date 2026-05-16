@@ -1,0 +1,100 @@
+\section{Definizione del Problema}
+
+\subsection{La complessità intrinseca delle NullPointerException }
+Le \textit{NullPointerException} (NPE) rappresentano una delle cause principali di eccezioni
+ non gestite che determinano il crash delle applicazioni in ambienti di produzione 
+ \cite{durieux2017dynamic}. In ottica ingegneristica, è fondamentale chiarire che le 
+ NPE non costituiscono banali errori sintattici facilmente individuabili, bensì insidiosi 
+ bug semantici legati alla gestione della memoria e dei puntatori. La loro insorgenza e il
+  loro comportamento sono per loro natura legati e dipendenti dal flusso di esecuzione 
+  (control-flow) e dal flusso dei valori (value-flow) del programma \cite{xu2019vfix}. 
+  Come evidenziato dalla letteratura, l'analisi statica del codice locale si rivela spesso 
+  insufficiente per avere un quadro completo degli oggetti e delle variabili compatibili;
+   per comprendere appieno la natura di una NPE risulta infatti necessaria un'analisi dinamica 
+   e dettagliata del contesto a tempo di esecuzione \cite{durieux2017dynamic}.
+
+La difficoltà principale nel debugging delle NPE risiede in un marcato disallineamento spaziale 
+e logico tra il difetto originario e il punto di interruzione in cui l'eccezione si 
+manifesta. Il punto esatto in cui il programma va materialmente in crash
+rappresenta tipicamente solo la fine di una complessa catena di propagazione originata altrove. 
+Un difetto originario, che nella maggior parte dei casi consiste in una mancata inizializzazione 
+di un oggetto o in un controllo di nullità assente, risiede spesso a notevole distanza a livello 
+di codice \cite{xu2019vfix}. Di conseguenza, una NPE e la sua effettiva posizione di correzione 
+(bug-fixing location) possono estendersi in modo inter-procedurale attraverso molteplici funzioni 
+all'interno di codebase di grandi dimensioni \cite{xu2019vfix}.
+
+Questa frammentazione strutturale pone sfide profonde per gli strumenti di
+ \textit{Automated Program Repair}. Ignorando le complesse dipendenze 
+ di controllo e dei dati (il value-flow inter-procedurale), i tradizionali 
+ approcci APR operano su spazi di ricerca immensi generando spesso riparazioni 
+ localizzate esclusivamente al punto di crash \cite{xu2019vfix}. Tali approcci 
+ limitati (come i \textit{single-line edits} per saltare una singola istruzione 
+ o inserire un controllo banale) portano frequentemente alla generazione di patch 
+ "plausibili ma errate" (\textit{plausible but incorrect patches}): soluzioni che 
+ riescono a superare la suite di test ma introducono comportamenti semanticamente 
+ indefiniti nel prosieguo del programma \cite{xu2019vfix}. Risolvere in modo definitivo
+  questi bug complessi non richiede un semplice mascheramento dell'eccezione, ma necessita 
+  di modifiche strutturate (\textit{multi-point edits}) capaci di ripristinare il 
+  corretto flusso dei dati fin dalla sua origine, evidenziando così i limiti degli 
+  strumenti di riparazione basati unicamente su template sintattici limitati o approcci 
+  di ricerca ciechi \cite{xu2019vfix}.
+
+\subsection{I limiti degli LLM nell'Automated Program Repair}
+
+Negli ultimi anni, i \textit{Large Language Models} si sono affermati come lo standard de facto 
+per automatizzare \textit{task} complessi di ingegneria del software, incluse le più recenti tecniche 
+di \textit{Automated Program Repair} a livello di \textit{repository} \cite{zhang2024llmhallucinations,pabba2025semagent}.
+Tuttavia, nonostante le notevoli capacità dimostrate nella risoluzione di frammenti di codice 
+isolati, un'analisi accademica rigorosa rivela che gli LLM "puri" (intendendo con ciò l'utilizzo 
+dei \textit{Large Language Models} in totale isolamento, affidandosi esclusivamente alla loro architettura 
+interna e alle informazioni acquisite durante la fase di addestramento) presentano dei difetti strutturali 
+intrinseci quando sono chiamati ad affrontare \textit{bug} complessi e semanticamente densi. Tali limiti
+emergono in modo evidente di fronte a problematiche che richiedono una profonda comprensione del 
+flusso di controllo, dei dati o delle dipendenze di stato, come ad esempio \textit{bug} critici legati a 
+\textit{NullPointerException} o altre violazioni della logica di esecuzione profonda \cite{zhang2025semanticforge}.
+
+Il motivo tecnico alla base di questi difetti strutturali risiede nel meccanismo fondamentale di
+ funzionamento dei modelli linguistici. Come evidenziato da Zhang et al., gli LLM generano il 
+ codice operando primariamente sulla base della probabilità statistica, ovvero prevedendo ricorsivamente 
+ un \textit{token} dopo l'altro. 
+ Questo processo avviene senza alcun meccanismo connaturale capace di garantire il rispetto dei requisiti 
+formali o semantici del linguaggio di programmazione \cite{zhang2025semanticforge}.
+Precisano, inoltre, che il vantaggio principale degli LLM, ovvero l'eccellente capacità 
+di riconoscimento dei \textit{pattern}, costituisce al contempo la loro più grande limitazione: 
+i modelli tendono a generare codice appoggiandosi esclusivamente ai \textit{pattern} comuni osservati 
+nei dati di addestramento, piuttosto che derivare una comprensione profonda delle specifiche 
+intenzioni e necessità logiche del problema \cite{zhang2024llmhallucinations}.
+Questo approccio puramente predittivo conduce inesorabilmente al fenomeno delle allucinazioni \cite{zhang2025semanticforge,zhang2024llmhallucinations}.
+In ambito di generazione del codice, le allucinazioni si manifestano tipicamente quando il modello 
+produce \textit{patch} che appaiono sintatticamente corrette e del tutto plausibili, spesso riuscendo 
+persino a superare la fase di compilazione senza errori, ma che si rivelano fondamentalmente 
+errate o inconsistenti dal punto di vista della logica semantica. Tali aberrazioni si dividono 
+in errori logici (come l'iterazione su collezioni errate o l'omissione di mutazioni di stato vitali) 
+ed errori schematici (che includono violazioni di firme, discrepanze di tipo e chiamate a funzioni 
+mai definite) \cite{zhang2025semanticforge}.
+
+Questo limite statistico e predittivo si traduce direttamente nel fenomeno dell'\textit{overfitting}, 
+ampiamente documentato da Pabba et al. Gli studi dimostrano come i sistemi basati esclusivamente 
+su LLM tendano a iper-localizzarsi sulle righe di codice immediatamente sospette, tentando 
+di ripararle in totale isolamento rispetto all'intero ecosistema del software. Il risultato 
+è la generazione di \textit{patch} che soffrono di un marcato \textit{overfitting}: il codice prodotto riesce 
+a risolvere gli specifici esempi falliti forniti nella descrizione del \textit{bug}, riuscendo magari 
+a superare la \textit{test suite} locale, ma si rivela incapace di generalizzare. La riparazione 
+si limita quindi ad agire come un mero cerotto superficiale che fallisce nel gestire i casi 
+limite (\textit{edge cases}) e non soddisfa i requisiti di coerenza più ampi e profondi dell'applicazione \cite{pabba2025semagent}.
+
+Infine, questa tendenza all'\textit{overfitting} e alla generazione di soluzioni localmente ottime ma 
+globalmente fallate è inestricabilmente legata alla mancanza di una reale consapevolezza 
+del codice. Zhang et al. sottolineano come l'assenza di un contesto a livello di intero progetto 
+(\textit{repository-level context}) impedisca agli LLM puri di comprendere le dipendenze profonde necessarie 
+per vere riparazioni \cite{zhang2024llmhallucinations}. In scenari di sviluppo reali, la stragrande maggioranza delle funzioni 
+dipende da entità definite altrove nel progetto o da API personalizzate; tuttavia, i rigidi limiti 
+sui \textit{token} dei modelli \textit{Transformer} rendono impossibile e impraticabile l'inclusione dell'intero 
+contesto del \textit{repository} nel \textit{prompt}. Di conseguenza, ignorando le catene di chiamate transitive 
+e i vincoli architetturali distribuiti su molteplici file, i modelli "puri" si affidano 
+a supposizioni statistiche cieche, generando conflitti di dipendenza e riparazioni semanticamente 
+vuote che non possono integrarsi in sicurezza in basi di codice complesse \cite{zhang2024llmhallucinations,zhang2025semanticforge}.
+
+\subsection{Il vizio di forma della ricerca: l'illusione della Perfect Fault Localization}
+
+\subsection{La necessità di una guida semantica rigorosa}
