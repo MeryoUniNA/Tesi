@@ -95,6 +95,129 @@ e i vincoli architetturali distribuiti su molteplici file, i modelli "puri" si a
 a supposizioni statistiche cieche, generando conflitti di dipendenza e riparazioni semanticamente 
 vuote che non possono integrarsi in sicurezza in basi di codice complesse \cite{zhang2024llmhallucinations,zhang2025semanticforge}.
 
-\subsection{Il vizio di forma della ricerca: l'illusione della Perfect Fault Localization}
+\subsection{L'illusione della Perfect Fault Localization}
+
+Le elevate percentuali di successo (\textit{fix rate}) vantate dalla recente letteratura
+sui \textit{tool} di \textit{Automated Program Repair} basati su
+\textit{Large Language Models} sono spesso drasticamente sovrastimate.
+Alla base di questo ottimismo ingiustificato risiede un vizio di forma metodologico
+profondamente radicato nelle prassi di valutazione: l'assunzione della
+\textit{Perfect Fault Localization} (PFL) \cite{li2024hybrid}.
+Gran parte della ricerca accademica valuta l'efficacia dei modelli fornendo loro
+l'esatta riga di codice o la specifica funzione contenente il difetto, assumendo
+artificialmente che tale informazione sia sempre disponibile e accurata \cite{li2024hybrid}.
+Tuttavia, questo scenario è del tutto irrealistico nella pratica industriale,
+creando una percezione distorta delle reali potenzialità di questi strumenti, i quali
+finiscono per essere testati in un ambiente idealizzato e non replicabile sul campo \cite{campos2025exploring}.
+
+Nella realtà operativa, gli sviluppatori non dispongono di oracoli infallibili e devono
+necessariamente affidarsi a tecniche di \textit{Automated Fault Localization} (AFL),
+le quali sono intrinsecamente imperfette e rumorose \cite{li2024hybrid}.
+La contrapposizione tra gli scenari di PFL e AFL svela la grave fragilità degli
+attuali sistemi di riparazione. Il lavoro di [Campos et al., 2025] evidenzia esplicitamente
+un calo significativo dell'accuratezza quando i \textit{tool} vengono testati in condizioni
+realistiche e imperfette.
+Nello specifico, lo studio dimostra che l'effettiva posizione del \textit{bug} compare tra i primi
+tre candidati identificati dallo strumento di localizzazione solamente in 28 casi su 100,
+portando inevitabilmente i modelli linguistici a operare su porzioni di codice irrilevanti
+e abbattendo le metriche di successo.
+L'abbandono della localizzazione perfetta comporta crolli prestazionali drastici, che
+spaziano dal -7,83\% per Gemini 2.0 Flash fino al -16,20\% per Claude 3.7 Sonnet \cite{campos2025exploring}.
+Questa profonda discrepanza viene ulteriormente corroborata dai dati quantitativi
+forniti da [Li et al., 2024].
+Valutando il sistema GIANTREPAIR sotto la rassicurante assunzione della
+\textit{Perfect Fault Localization}, il \textit{tool} è stato in grado di riparare con successo
+ben 171 \textit{bug}.
+Quando però lo stesso strumento è stato messo alla prova nello scenario ben più
+sfidante e realistico dell'\textit{Automated Fault Localization}, il numero di
+\textit{bug} risolti è crollato drasticamente a soli 64 \cite{li2024hybrid}.
+Questo divario incolmabile dimostra che le \textit{performance} eccellenti decantate in laboratorio
+dipendono quasi esclusivamente dall'innesco artificiale fornito dalla localizzazione esatta.
+
+La causa sottostante a un fallimento così clamoroso dei modelli in assenza di PFL
+risiede nella loro grave carenza di reali capacità di ragionamento, mascherata
+da un'eccessiva memorizzazione del codice sorgente.
+Il rigoroso impianto analitico basato sul test delle ipotesi introdotto da [Kong et al., 2025a]
+smaschera l'illusione della comprensione semantica degli LLM, permettendo di distinguere
+analiticamente la vera risoluzione di un problema dalla mera riproduzione dei dati
+di addestramento. \cite{kong2025demystifying}
+
+L'esperimento dimostra questa dinamica testando LLM (GPT-3.5 e CodeLlama) su due
+\textit{dataset} distinti: Defects4J, storico e presumibilmente memorizzato, e
+GitBug-Java, recente e sconosciuto ai modelli.
+Le statistiche presentate nello studio sono inequivocabili: nel noto \textit{dataset} Defects4J,
+una percentuale altissima delle \textit{patch} ritenute corrette — nello specifico il
+78,83\% per GPT-3.5 e l'87,42\% per CodeLlama-7b — non è in alcun modo frutto di ragionamento o
+reale riparazione, ma consiste in un "\textit{exact match}", ossia in una rigurgitazione
+letterale di codice memorizzato durante la fase di \textit{training}.
+
+Ancora più allarmante è la prova definitiva fornita da questi esperimenti attraverso
+l'alterazione sistematica del codice. I ricercatori hanno mutato pesantemente il codice
+affetto da \textit{bug}, omettendo il contesto logico essenziale o scambiando e
+rinominando le variabili chiave.
+Se il modello stesse realmente ragionando, dovrebbe adattare la sua correzione alle
+nuove variabili.
+Invece, persino quando il codice viene significativamente mutato, omettendo o
+alterando il contesto per cui le correzioni originali non avrebbero più validità semantica,
+l'81,82\% delle \textit{patch} di GPT-3.5 e l'88,24\% di quelle di CodeLlama-7b continuano
+in modo implacabile a essere identiche alle soluzioni originariamente memorizzate,
+richiamando variabili ormai inesistenti nel \textit{prompt}.
+
+In conclusione, i dati dimostrano che, privati del "suggerimento" esatto e del contesto
+inequivocabile garantito dalla PFL, i modelli linguistici non sono in grado di orientarsi
+autonomamente; sprovvisti di una reale capacità di \textit{problem-solving}, essi si limitano a
+restituire \textit{pattern} memorizzati, fallendo irrimediabilmente nella risoluzione dei \textit{bug}
+non appena lo scenario si discosta dai confini sicuri dei test di laboratorio \cite{kong2025demystifying}.
 
 \subsection{La necessità di una guida semantica rigorosa}
+
+Come emerso dall'analisi della letteratura, lo stato dell'arte dell'\textit{Automated Program Repair} (APR) 
+si scontra con un evidente vicolo cieco quando affronta \textit{bug} complessi come le \textit{NullPointerException} (NPE). 
+La risoluzione delle NPE richiede una comprensione profonda del flusso di controllo e comporta, non di rado, 
+modifiche multi-punto all'interno del codice. Da un lato, affidarsi unicamente a un \textit{Large Language Model} 
+"puro" per localizzare e risolvere tali \textit{bug} si è rivelata una strategia fondamentalmente inefficace \cite{feng2025concurrency}.
+Gli LLM, se privi di una \textit{Perfect Fault Localization} (PFL), si smarriscono nell'eccesso di contesto, 
+ignorando i legami causali profondi e limitandosi a euristiche superficiali di similarità \cite{sepidband2026rgfl}. 
+Inoltre, come ampiamente documentato, i modelli generativi lasciati agire senza una guida esplicita 
+mostrano una marcata inclinazione all'allucinazione e alla mera memorizzazione statistica, risultando 
+incapaci di ricostruire la semantica rigorosa del difetto \cite{sepidband2026rgfl, abtahi_augmenting}. 
+
+Il superamento di questo ostacolo impone, di conseguenza, un radicale cambio di paradigma: la straordinaria 
+capacità generativa e la flessibilità dei \textit{Large Language Models} devono essere necessariamente accoppiate 
+a un "motore di ragionamento" esterno, formale e rigoroso. È essenziale promuovere una profonda integrazione 
+tra intelligenza artificiale e le tecniche tradizionali e formali di analisi del programma. Autori recenti 
+supportano con forza questa necessità di ibridazione; ad esempio, [Feng et al., 2025] dimostrano che l'unione 
+tra il rigore strutturale dell'analisi statica e le capacità semantiche degli LLM è la chiave per colmare 
+la "\textit{semantic sparsity}" e abbattere le allucinazioni intrinseche dei modelli \cite{feng2025concurrency}. 
+In parallelo, [Abtahi e Azim, 2024] evidenziano l'importanza di potenziare gli LLM attraverso l'analisi statica 
+del codice proprio per prevenire la generazione di \textit{output} apparentemente plausibili ma logicamente scorretti \cite{abtahi_augmenting}. 
+Infine, [Sepidband et al., 2026] confermano che vincolare l'attenzione del modello con un ragionamento causale 
+mirato risulta assolutamente essenziale per convertire il recupero di frammenti di codice isolati in una riparazione efficace \cite{sepidband2026rgfl}.
+
+A tal fine, questa ricerca si baserà sull'integrazione di \textit{LogicFL} 
+[Kim e Song, 2024], uno strumento esistente progettato per imitare il 
+processo deduttivo umano e identificare le cause profonde delle 
+\textit{NullPointerException} tramite inferenze logiche \cite{kim2024identifying}. 
+L'adozione di questo strumento all'interno del nostro approccio 
+persegue un duplice e vitale scopo:
+
+\begin{itemize}
+    \item Fornire al motore generativo (LLM) un contesto semantico 
+    solido e "sicuro": sfruttando la capacità di \textit{LogicFL} di 
+    estrarre fatti logici sia dal codice sorgente che dall'esecuzione 
+    dei \textit{test} \cite{kim2024identifying}, si isolano esclusivamente le dipendenze 
+    e i percorsi rilevanti, offrendo al modello un perimetro logico 
+    inequivocabile su cui operare.
+
+    \item Restringere drasticamente lo spazio di ricerca e le possibilità 
+    di allucinazione: filtrando le variabili non rilevanti attraverso le 
+    regole deduttive e i vincoli formali dello strumento \cite{kim2024identifying}, si guida 
+    attivamente l'LLM verso la sintesi di una \textit{patch} che sia 
+    semanticamente corretta, anziché limitarsi a un'ipotesi puramente 
+    e statisticamente probabile.
+\end{itemize}
+
+L'utilizzo di \textit{LogicFL} rappresenta, in conclusione, l'anello 
+di congiunzione essenziale per orchestrare il rigore deduttivo 
+dell'analisi formale \cite{kim2024identifying} con l'espressività dell'IA, superando 
+definitivamente i limiti degli approcci puramente generativi.
