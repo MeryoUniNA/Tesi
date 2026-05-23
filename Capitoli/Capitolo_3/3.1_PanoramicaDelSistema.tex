@@ -93,7 +93,7 @@ failing\_tests e stack\_traces: il contesto dinamico del fallimento.
 Lo scopo di questa fase è operare una transizione fluida dal dominio formale della diagnosi al 
 dominio semantico-generativo. La diagnosi di Fase 1 viene trasformata in una specifica di riparazione linguistica 
 attraverso un ragionamento strutturato \textit{Chain-of-Thought} (CoT). Dal punto di vista del disaccoppiamento 
-architetturale, è imperativo notare che in questa fase non si produce alcun codice sorgente: l'obiettivo è la 
+architetturale, è doveroso far notare che in questa fase non si produce alcun codice\: l'obiettivo è la 
 sintesi di una comprensione profonda e ragionata del problema.
 
 \textit{\textbf{Input}}: 
@@ -151,7 +151,7 @@ manipolazione avviene su una \textit{sandbox} del sorgente, preservando in modo 
 \textit{directory} originale.
 
 L'agente non manipola i \textit{file} ciecamente, ma ha a disposizione 6 \textit{tool} specializzati, integrati 
-per fornire \textit{affordance} computazionali all'inferenza stocastica:
+per ancorare il ragionamento probabilistico del LLM a azioni concrete sul progetto Java.
 
 \begin{itemize}
 \item
@@ -177,8 +177,8 @@ Il sistema integra una logica di tolleranza all'errore iterativa guidata dalla m
 Questo parametro introduce una variabilità stocastica incrementale, innalzando la temperatura 
 (\textit{temperature sampling}) ai tentativi successivi per favorire l'esplorazione di soluzioni alternative 
 in caso di blocchi ripetuti. Parallelamente, conversation\_store.py persiste la memoria conversazionale su 
-\textit{file} strutturati JSONL. Iniettare il fallimento dei tentativi precedenti (ispirato formalmente all'approccio 
-di ChatRepair) previene cicli di riproposizione di \textit{patch} non compilabili o inadeguate. Al termine dei 
+\textit{file} strutturati JSONL. Iniettare il fallimento dei tentativi precedenti previene cicli di riproposizione
+ di \textit{patch} non compilabili o inadeguate. Al termine dei 
 tentativi configurabili (\textit{default}: 3), sandbox\_evaluator.py orchestra una compilazione e validazione 
 JUnit finali indipendenti per fornire una certificazione obiettiva del successo.
 

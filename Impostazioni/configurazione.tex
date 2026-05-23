@@ -4,7 +4,7 @@
 \usepackage[main=italian]{babel}
 
 % Margini (adatti per la rilegatura)
-\usepackage[top=3cm, bottom=3cm, left=3.5cm, right=3cm]{geometry}
+\usepackage[top=2.5cm, bottom=2.5cm, left=3cm, right=2.5cm]{geometry}
 
 % Spaziatura tra i paragrafi (stile moderno)
 \usepackage{parskip}
@@ -12,6 +12,10 @@
 % Gestione Immagini
 \usepackage{graphicx}
 \graphicspath{{immagini/}} % Dice a LaTeX di cercare le foto direttamente qui
+
+% Gestione del codice sorgente
+\usepackage{listings}
+\usepackage{xcolor}
 
 % csquotes è fortemente consigliato insieme a babel e biblatex
 \usepackage{csquotes}
@@ -21,3 +25,19 @@
 
 % Link cliccabili nel PDF (caricalo sempre per ultimo)
 \usepackage[colorlinks=true, allcolors=black]{hyperref}
+
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{float}
+
+
+\lstset{
+    language=Python,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue},
+    stringstyle=\color{red},
+    commentstyle=\color{green!60!black},
+    breaklines=true,
+    aboveskip=\smallskipamount,
+    belowskip=\smallskipamount
+}
