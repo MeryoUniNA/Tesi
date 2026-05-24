@@ -60,31 +60,26 @@ tra il processo JVM e il processo SWI-Prolog. Questo meccanismo architetturale b
 alla classe Java di eseguire tre operazioni cruciali: (i) caricare i file sorgente Prolog all'interno
 dell'ambiente di esecuzione, (ii) asserire dinamicamente nuovi fatti nella \textit{knowledge base}, e (iii) valutare le
 query interrogando il motore di inferenza, per poi raccogliere le soluzioni risultanti proiettandole su strutture
-dati native Java. Tale accoppiamento stretto e in-memory tra la piattaforma Java --- sulla quale il
-codice analizzato viene eseguito --- e il motore di inferenza Prolog rappresenta il tratto architetturale
-distintivo che separa nettamente LogicFL dagli approcci di analisi puramente statici.
-
-\noindent\rule{\textwidth}{0.4pt}
+dati native Java.
 
 \subsubsection{Analisi Statica: la Generazione dei Fatti Strutturali}
 
-Il primo componente del sistema, lo \texttt{StaticAnalyzer}, riceve in input il bytecode compilato o il
+Il primo componente del sistema, lo \texttt{StaticAnalyzer}, riceve in input il
 codice sorgente Java del programma difettoso. Il suo scopo è costruire una rappresentazione formale dell'Abstract
 Syntax Tree (AST) del programma, codificandola sotto forma di fatti Prolog. Questo specifico processo di
 traduzione sintattico-semantica è comunemente denominato \textit{code instrumentation} a livello di analisi statica: il programma sotto
 test non viene in alcun modo eseguito, ma la sua struttura lessicale, sintattica e relazionale
 subisce una trasformazione isomorfa in un insieme di clausole proprie della logica del primo ordine.
 
-Il risultato tangibile di tale computazione è la produzione del file \texttt{logic-fl.pl} (spesso accompagnato da un
-file ausiliario \texttt{code-facts.pl}), i quali costituiscono la base strutturale essenziale della \textit{knowledge base} del sistema.
+Il risultato tangibile di tale computazione è la produzione del file \texttt{logic-fl.pl} e \texttt{code-facts.pl}, i quali costituiscono la base strutturale essenziale della \textit{knowledge base} del sistema.
 Il vocabolario dei fatti Prolog prodotti è progettato per coprire con precisione gli elementi della semantica Java
 che risultano rilevanti per mappare la propagazione dei valori \texttt{null}. Si riportano e si commentano semanticamente
 di seguito gli 8 blocchi di fatti relazionali fondamentali generati:
 
 \textbf{1. \texttt{assign/3} --- Assegnazioni}
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 assign(v_r_207, dataset_utilities_tests_1_expr8, line(dataset_utilities_tests_1, 1275)).
-\end{verbatim}
+\end{lstlisting}
 Questo fatto logico afferma formalmente che la variabile locale identificata dall'atomo Prolog \texttt{v\_r\_207} riceve, a
 seguito di un'operazione di assegnamento, il valore prodotto dall'espressione \texttt{dataset\_utilities\_tests\_1\_expr8}. Tale operazione si verifica in
 corrispondenza della riga 1275 all'interno della classe denotata dall'identificatore \texttt{dataset\_utilities\_tests\_1}. La codifica del costrutto
@@ -92,10 +87,10 @@ posizionale \texttt{line(ClassId, LineNum)} costituisce un riferimento spaziale 
 indispensabile per discriminare omonimie e collisioni di identificatori che si manifestano in classi differenti.
 
 \textbf{2. \texttt{method\_invoc/3} --- Invocazioni di Metodo}
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 method_invoc(dataset_utilities_tests_1_expr8, m_iterate_domain_bounds_89, 
              line(dataset_utilities_tests_1, 1275)).
-\end{verbatim}
+\end{lstlisting}
 Tale fatto codifica la risoluzione semantica di una chiamata procedurale: esso dichiara che l'espressione
 \texttt{dataset\_utilities\_tests\_1\_expr8} rappresenta il risultato materiale dell'invocazione del metodo identificato come \texttt{m\_iterate\_domain\_bounds\_89} alla riga specificata.
 Il valore restituito dalla procedura è identificato dall'atomo che funge da primo argomento del predicato.
@@ -104,10 +99,10 @@ risultato di una chiamata al contesto del metodo chiamante, rendendo possibile i
 di valori \texttt{null} attraverso catene di invocazioni inter-procedurali.
 
 \textbf{3. \texttt{argument/3} e 4. \texttt{param/3} --- Argomenti di Invocazione e Parametri Formali}
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 argument(v_d_205, 1, dataset_utilities_tests_1_expr8).
 param(v_d_205_formal, 1, m_iterate_domain_bounds_89).
-\end{verbatim}
+\end{lstlisting}
 Il fatto \texttt{argument/3} sancisce una relazione associativa: la variabile locale \texttt{v\_d\_205} è passata come primo
 (1) argomento effettivo all'interno dell'invocazione di metodo identificata da \texttt{dataset\_utilities\_tests\_1\_expr8}. L'arità e l'indicizzazione posizionale
 degli argomenti assumono un'importanza basilare al fine di allineare i parametri formali definiti in una
@@ -118,10 +113,10 @@ il mapping esatto tra argomenti effettivi e parametri formali, permettendo la pr
 di nullità tra scope differenti.
 
 \textbf{5. \texttt{return/3} --- Espressioni di Ritorno}
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 return(dataset_utilities_tests_1_literal5, m_iterate_domain_bounds_89, 
        line(dataset_utilities_tests_1, 780)).
-\end{verbatim}
+\end{lstlisting}
 Questo predicato codifica sintatticamente la capacità del metodo \texttt{m\_iterate\_domain\_bounds\_89} di restituire il valore valutato
 dall'espressione \texttt{dataset\_utilities\_tests\_1\_literal5} in corrispondenza della riga 780. All'interno del file delle regole logiche (\texttt{npe-rules.pl}),
 questo costrutto è intensivamente sfruttato per determinare staticamente se un dato metodo possa o meno produrre
@@ -129,9 +124,9 @@ un ritorno nullo (esaminando se il sub-grafo di controllo espone almeno un perco
 che produce \texttt{null} e un percorso alternativo che produce un valore istanziato).
 
 \textbf{6. \texttt{ref/3} --- Riferimenti a Nomi e Dereferenziazioni}
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 ref(v_r_207, dataset_utilities_tests_1_expr10, line(dataset_utilities_tests_1, 1276)).
-\end{verbatim}
+\end{lstlisting}
 Questo fatto dichiara formalmente che l'entità nominata \texttt{v\_r\_207} subisce una \textit{dereferenziazione} (venendo utilizzata, per esempio,
 come \textit{receiver} di una chiamata o come argomento effettivo) all'interno dell'espressione \texttt{dataset\_utilities\_tests\_1\_expr10} situata alla
 riga 1276. Dal punto di vista diagnostico, questo predicato rappresenta il punto di ingresso analitico
@@ -140,22 +135,37 @@ un valore \texttt{null} in un preciso istante di esecuzione e viene successivame
 modellata da un fatto \texttt{ref}, si deduce con certezza l'occorrenza di un potenziale crash di
 tipo \texttt{NullPointerException} (NPE).
 
+
+
 \textbf{7. \texttt{class/2} e \texttt{method/2} --- Metadati Strutturali}
-\begin{verbatim}
-class(dataset_utilities_tests_1, line_range(1, 2000)).
-method(m_iterate_domain_bounds_89, line_range(700, 800)).
-\end{verbatim}
-I predicati metadatistici forniscono informazioni sull'incapsulamento del codice sorgente. Il predicato \texttt{method/2} instaura un'associazione tra
-ogni identificatore univoco di metodo e il suo rispettivo intervallo di righe (inizio-fine) misurato sul
-file sorgente originale. Questa nozione spaziale è sistematicamente consultata dalla regola \texttt{find\_method/2} al fine
-di vincolare una data istruzione (riga di codice) al blocco procedurale di appartenenza, requisito metodologico
-imprescindibile per il corretto funzionamento degli algoritmi di ranking causale.
+\begin{lstlisting}[language=Prolog]
+class(dataset_utilities_1, 'org.jfree.data.general.DatasetUtilities').
+method(m_iterate_domain_bounds_89,
+       range(dataset_utilities_1, _, _, 770, 790)).
+\end{lstlisting}
+
+I predicati metadatistici forniscono informazioni sull'incapsulamento del codice sorgente. 
+Il predicato \texttt{class/2} associa un identificatore Prolog univoco al nome pienamente qualificato 
+della classe Java corrispondente. Il predicato \texttt{method/2} instaura invece un'associazione tra ogni
+ identificatore univoco di metodo e il suo rispettivo intervallo di righe (inizio-fine) misurato 
+ sul file sorgente originale, avvalendosi della struttura \texttt{range/5}. Questa nozione spaziale 
+ è sistematicamente consultata dalla regola \texttt{find\_method/2} al fine di vincolare una data 
+ istruzione (riga di codice) al blocco procedurale di appartenenza, requisito metodologico imprescindibile 
+ per il corretto funzionamento degli algoritmi di ranking causale. 
+ 
+ Gli algoritmi di \textit{ranking} causale
+  ordinano le possibili cause radice di un errore in base alla loro utilità diagnostica. Il loro scopo è 
+  dare priorità ai veri difetti del codice da riparare, filtrando 
+  e scartando origini irrilevanti come i valori passati inizialmente dai file di test.
+
+
+
 
 \textbf{8. \texttt{literal/6} e \texttt{name\_ref/4} --- Valori Letterali e Tipi di Nome}
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 literal(dataset_utilities_tests_1_literal5, null, type_null, _, _, _).
 name_ref(v_r_207, var, type_Object, _).
-\end{verbatim}
+\end{lstlisting}
 Infine, il predicato \texttt{literal/6} lega un identificatore astratto a un valore costante noto a tempo di
 compilazione (come la parola chiave \texttt{null}, un intero o una stringa). Il predicato \texttt{name\_ref/4}, di
 converso, incapsula la tipizzazione semantica del nome Prolog in precise categorie: definisce \texttt{var} per le variabili
@@ -164,9 +174,7 @@ d'istanza o di classe (statici). La regola inferenziale \texttt{is\_var/1}, defi
 a questo predicato per identificare dinamicamente quali entità del programma debbano essere considerate e tracciate
 come variabili in senso lato, ossia contenitori di memoria suscettibili di mutazione di stato.
 
-\noindent\rule{\textwidth}{0.4pt}
-
-\paragraph{3.2.1.3 Analisi Dinamica: la Generazione dei Fatti di Valore}
+\subsubsection{Analisi Dinamica: la Generazione dei Fatti di Valore}
 
 Sebbene l'analisi statica provveda a generare una topologia esaustiva della struttura lessicale e sintattica del
 codice, essa risulta, per costruzione teorica, intrinsecamente incompleta nell'indagine dei \textit{valori concreti} che le variabili
@@ -182,14 +190,14 @@ finalizzato a intercettare sistematicamente le istruzioni di caricamento e memor
 i valori transitanti nelle variabili vengono registrati in un buffer temporale. L'epilogo di questo processo
 di monitoring si concretizza nell'aggiunta fattuale di predicati dinamici \texttt{val/3} in coda al file \texttt{logic-fl.pl}.
 
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 val(v_r_207, null, line(dataset_utilities_tests_1, 1276)).
-\end{verbatim}
+\end{lstlisting}
 
 Questo predicato, generato esclusivamente a tempo di esecuzione durante l'istanza del test fallente, attesta inequivocabilmente che
 la locazione di memoria riferita a \texttt{v\_r\_207} possedeva il valore di puntatore \texttt{null} nel momento
 in cui lo stack frame attraversava la riga 1276. L'intensione semantica di \texttt{val/3} è pertanto
-squisitamente \textit{dinamica}: non si è in presenza di una proprietà astratta derivante dalla topologia statica del
+ \textit{dinamica}: non si è in presenza di una proprietà astratta derivante dalla topologia statica del
 codice, ma di una misurazione empirica ed esatta dello stato del programma.
 
 È la combinazione ortogonale di fatti strutturali (quali \texttt{assign/3}, \texttt{ref/3} e \texttt{method\_invoc/3}) con i fatti di
@@ -201,11 +209,11 @@ Oltre alla modellazione dello stato della memoria locale tramite i fatti \texttt
 occupa di formalizzare anche le informazioni strutturali relative al frame dello stack trace catturato al
 momento del crash, emettendo predicati dediti all'ispezione della gerarchia delle chiamate.
 
-\begin{verbatim}
+\begin{lstlisting}[language=Prolog]
 trace(frame_1, dataset_utilities_tests_1, m_iterate_domain_bounds_89, 
       line(dataset_utilities_tests_1, 1276), failure_1, target).
 test_failure(test_1, failure_1, exception_npe).
-\end{verbatim}
+\end{lstlisting}
 
 Il predicato Prolog \texttt{trace/6} cattura il singolo frame dello stack generato dall'eccezione. La sua arità complessa
 codifica, nello specifico, l'ID dell'invocazione, la classe e il metodo chiamati (argomento 3), la riga
