@@ -177,10 +177,10 @@ come variabili in senso lato, ossia contenitori di memoria suscettibili di mutaz
 \subsubsection{Analisi Dinamica: la Generazione dei Fatti di Valore}
 
 Sebbene l'analisi statica provveda a generare una topologia esaustiva della struttura lessicale e sintattica del
-codice, essa risulta, per costruzione teorica, intrinsecamente incompleta nell'indagine dei \textit{valori concreti} che le variabili
+codice, essa risulta, per costruzione teorica, incompleta nell'indagine dei \textit{valori concreti} che le variabili
 assumono nello spazio degli stati durante l'evoluzione dell'esecuzione. Allo scopo di asserire in modo inconfutabile che
 un'espressione valuti effettivamente a \texttt{null} in un punto arbitrario del flusso di controllo durante il
-run di uno specifico test case fallente, si rende imperativa l'adozione di uno strumento di
+run di uno specifico test case fallente,  necessaria l'adozione di uno strumento di
 analisi dinamica.
 
 Tale adempimento è demandato al componente \texttt{DynamicAnalyzer}, il quale si avvale di una tecnica di \textit{code
@@ -210,10 +210,14 @@ occupa di formalizzare anche le informazioni strutturali relative al frame dello
 momento del crash, emettendo predicati dediti all'ispezione della gerarchia delle chiamate.
 
 \begin{lstlisting}[language=Prolog]
-trace(frame_1, dataset_utilities_tests_1, m_iterate_domain_bounds_89, 
-      line(dataset_utilities_tests_1, 1276), failure_1, target).
 test_failure(test_1, failure_1, exception_npe).
+trace(frame_1, dataset_utilities_tests_1, m_iterate_domain_bounds_89, line(dataset_utilities_tests_1, 1276), failure_1, target).
 \end{lstlisting}
+
+Il predicato \texttt{test\_failure/3} definisce e identifica in modo univoco l'evento di fallimento di uno specifico test case,
+ esplicitandone la classe (argomento 2) e il metodo (argomento 3). Questo fatto funge da ancoraggio radice: tutti gli eventi dinamici 
+ e strutturali registrati per quello specifico crash faranno riferimento al suo identificatore (es. \texttt{failure\_1}), permettendo 
+ al sistema di correlare i dati di esecuzione alla loro origine.
 
 Il predicato Prolog \texttt{trace/6} cattura il singolo frame dello stack generato dall'eccezione. La sua arità complessa
 codifica, nello specifico, l'ID dell'invocazione, la classe e il metodo chiamati (argomento 3), la riga
@@ -223,12 +227,11 @@ codice sorgente dell'applicativo sottoposto a debug) o \texttt{non\_target} (qua
 quali JUnit, o da librerie standard della JRE). Questa specifica categorizzazione algoritmica è determinante per
 il corretto innesco del meccanismo che identifica la linea candidata come vera origine dell'anomalia.
 
-\noindent\rule{\textwidth}{0.4pt}
 
-\paragraph{3.2.1.4 Il Flusso Informativo Complessivo}
+\subsubsection{Il Flusso Informativo Complessivo}
 
 La configurazione integrata dei componenti esaminati può essere visualizzata mediante una rappresentazione topologica del flusso
-delle informazioni. Il diagramma sottostante schematizza il routing informativo completo, partendo dall'input grezzo (il codice
+delle informazioni. Il diagramma sottostante parten dall'input grezzo (il codice
 Java originario affetto da difetto e la batteria di test JUnit) sino alla materializzazione degli
 output strutturati che verranno serializzati e consumati dal layer in linguaggio Python.
 
@@ -270,7 +273,7 @@ Da un punto di vista procedurale, il flusso informativo procede attraversando qu
 
 \begin{enumerate}
     \item Il \textbf{codice sorgente Java} viene sottoposto a parsing e analizzato staticamente mediante il modulo
-    \texttt{StaticAnalyzer}. Quest'ultimo converte la sintassi Java in una rappresentazione Prolog olistica dell'Abstract Syntax Tree (AST),
+    \texttt{StaticAnalyzer}. Quest'ultimo converte la sintassi Java in una rappresentazione Prolog dell'Abstract Syntax Tree (AST),
     mappata interamente tramite un costrutto di predicati di primo ordine.
     \item I \textbf{test JUnit fallenti} vengono eseguiti contro il binario del programma appositamente strumentato dal
     \texttt{DynamicAnalyzer}. Questo passaggio inietta direttamente all'interno della \textit{knowledge base} i fatti dinamici \texttt{val/3}, quantificando le occorrenze esatte
@@ -280,11 +283,17 @@ Da un punto di vista procedurale, il flusso informativo procede attraversando qu
     di SWI-Prolog appoggiandosi al bridge nativo JPL. Conseguentemente, avvia l'esecuzione delle query logiche di localizzazione
     avvalendosi del corpus di regole presenti in \texttt{npe-rules.pl}. Le derivazioni logiche (risposte) calcolate dal motore Prolog vengono
     catturate in strutture dati Java e serializzate su filesystem all'interno dei due file di testo \texttt{root-cause.txt} e \texttt{fault\_locs.txt}.
-    \item Nel layer di elaborazione superiore, il modulo scritto in Python denominato \textbf{\texttt{logicfl\_parser.py}} esegue la lettura
-    sintattica dei file appena prodotti, procedendo alla costruzione e all'istanziazione di un oggetto polimorfico di tipo \texttt{FaultReport}.
-    Questa istanza viene successivamente arricchita semanticamente (per intercessione del modulo subordinato \texttt{prolog\_grounding.py}) con un livello di
-    informazione tipologica avanzata, estratta dinamicamente interrogando l'AST del codice Java in analisi per mezzo della libreria di
-    parsing incrementale Tree-sitter.
+    \item Nel layer di elaborazione superiore, il modulo scritto in Python denominato \textbf{\texttt{logicfl\_parser.py}} esegue la lettura sintattica
+    dei file appena prodotti dal motore logico, procedendo alla costruzione e all'istanziazione di un oggetto polimorfico di tipo \texttt{FaultReport}. 
+    Poiché i risultati di LogicFL sono originariamente espressi tramite identificatori Prolog interni (es. \texttt{v\_r\_207}) che risultano intrinsecamente
+     ``opachi'' per un modello generativo, l'istanza generata necessita di un ulteriore passaggio per colmare il divario semantico. A tal fine, per 
+     intercessione del modulo subordinato \textbf{\texttt{prolog\_grounding.py}}, il \texttt{FaultReport} viene arricchito con un livello di informazione 
+     tipologica avanzata. Utilizzando la libreria di parsing incrementale Tree-sitter, il modulo interroga dinamicamente l'AST del codice Java in analisi 
+     per mappare ogni simbolo Prolog alla sua esatta controparte. Nel concreto, questo processo di traduzione permette di convertire l'identificatore 
+     astratto \texttt{v\_r\_207} in un'entità reale e tipizzata, determinando, ad esempio, che esso fa riferimento all'oggetto \texttt{user} di tipo 
+     \texttt{User} alla riga 1276. Tale arricchimento trasforma la diagnosi logica in un contesto pratico immediatamente utilizzabile, 
+     requisito indispensabile affinché l'LLM possa comprendere la natura del difetto e generare una patch corretta e sensata.
+
 \end{enumerate}
 
 \subsection{Costruzione e Ranking delle Catene Causali}
