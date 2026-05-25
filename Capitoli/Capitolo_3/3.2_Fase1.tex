@@ -235,39 +235,41 @@ delle informazioni. Il diagramma sottostante parten dall'input grezzo (il codice
 Java originario affetto da difetto e la batteria di test JUnit) sino alla materializzazione degli
 output strutturati che verranno serializzati e consumati dal layer in linguaggio Python.
 
-\begin{verbatim}
-+-------------------------+      +-------------------------+
-|  Codice Sorgente Java   |      |    Test JUnit Fallenti  |
-+------------+------------+      +------------+------------+
-             |                                |
-             v                                v
-+-------------------------+      +-------------------------+
-|      StaticAnalyzer     |      |     DynamicAnalyzer     |
-+------------+------------+      +------------+------------+
-             |                                |
-             |    +---------------------+     |
-             +--->|     logic-fl.pl     |<----+
-                  |    code-facts.pl    |
-                  +----------+----------+
-                             |
-                             v
-                  +---------------------+
-                  |   FaultLocalizer    | 
-                  | (Motore SWI-Prolog) |
-                  +----------+----------+
-                             |
-                             v
-                  +---------------------+
-                  |   root-cause.txt    |
-                  |   fault_locs.txt    |
-                  +----------+----------+
-                             |
-                             v
-                  +---------------------+
-                  |  logicfl_parser.py  | 
-                  |    (Tree-sitter)    |
-                  +---------------------+
-\end{verbatim}
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        box/.style={rectangle, draw, thick, rounded corners, minimum height=1cm, text width=4.5cm, align=center, fill=blue!5},
+        arrow/.style={-stealth, thick}
+    ]
+        % Nodi
+        \node (source) [box] at (0, 0) {Codice Sorgente Java};
+        \node (tests) [box] at (6, 0) {Test JUnit Fallenti};
+        
+        \node (static) [box] at (0, -2.5) {StaticAnalyzer};
+        \node (dynamic) [box] at (6, -2.5) {DynamicAnalyzer};
+        
+        \node (pl) [box] at (3, -5) {\texttt{logic-fl.pl} \\ \texttt{code-facts.pl}};
+        
+        \node (fl) [box] at (3, -7.5) {FaultLocalizer \\ (Motore SWI-Prolog)};
+        
+        \node (output) [box] at (3, -10) {\texttt{root-cause.txt} \\ \texttt{fault\_locs.txt}};
+        
+        \node (parser) [box] at (3, -12.5) {\texttt{logicfl\_parser.py} \\ (Tree-sitter)};
+        
+        % Frecce di collegamento
+        \draw [arrow] (source) -- (static);
+        \draw [arrow] (tests) -- (dynamic);
+        
+        \draw [arrow] (static) |- (pl);
+        \draw [arrow] (dynamic) |- (pl);
+        
+        \draw [arrow] (pl) -- (fl);
+        \draw [arrow] (fl) -- (output);
+        \draw [arrow] (output) -- (parser);
+    \end{tikzpicture}
+    \caption{Rappresentazione topologica del flusso delle informazioni.}
+    \label{fig:flusso_informativo}
+\end{figure}
 
 Da un punto di vista procedurale, il flusso informativo procede attraversando quattro trasformazioni deterministiche:
 
