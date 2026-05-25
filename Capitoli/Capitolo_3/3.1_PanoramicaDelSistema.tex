@@ -34,7 +34,7 @@ intra-fase è governato da un contratto di interfaccia esplicito. Le strutture d
 sono fortemente tipizzate e centralizzate nel modulo shared/models.py, realizzando un'architettura robusta e 
 resistente agli errori di disallineamento dei dati.
 
-------------------------------------------------------------------------------------
+
 \subsubsection{Fase 1 — FaultOracle (fault\_oracle/)}
 La prima fase ha l'onere esclusivo di localizzare il difetto nel codice sorgente Java e di 
 derivare una diagnosi causale strutturata. In virtù della necessità di costruire una base di verità oggettiva, 
@@ -71,7 +71,7 @@ notoriamente fragile e incline a fallimenti strutturali su firme complesse o cla
 prolog\_grounding.py: Attua la materializzazione delle astrazioni formali. Entità prettamente simboliche generate 
 da Prolog (es. v\_r\_207) vengono risolte nei corrispettivi identificatori Java reali. Questo passaggio classifica 
 analiticamente la natura del difetto (es. NULL\_RETURN, NULL\_ARGUME\\NT, UNINITIALIZED\_FIELD) e formula direttive 
-di riparazione di natura categoriale.
+di riparazione di natura categoriale.\\\\\\
 \end{itemize}
 \textit{\textbf{Output}}: 
 \begin{itemize}
@@ -86,9 +86,9 @@ causal\_chains: una List[str] contenente le derivazioni Prolog originarie.
 grounded\_chains: una List[GroundedNPE], le catene semantizzate dotate di classificazione tecnica e direttive 
 d'intervento.
 \item 
-failing\_tests e stack\_traces: il contesto dinamico del fallimento.
+failing\_tests e stack\_traces: il contesto dinamico del fallimento.\\
 \end{itemize}
-------------------------------------------------------------------------------------
+
 \subsubsection{Fase 2 — SpecReason (reasoner/)}
 Lo scopo di questa fase è operare una transizione fluida dal dominio formale della diagnosi al 
 dominio semantico-generativo. La diagnosi di Fase 1 viene trasformata in una specifica di riparazione linguistica 
@@ -129,7 +129,6 @@ partenza, assegnando uno \textit{score} di confidenza continuo ($0.0 \leq confid
 \end{itemize}
 
 
-------------------------------------------------------------------------------------
 \subsubsection{Fase 3 — PatchAgent (patch\_agent/)}
 L'ultimo anello della catena ha l'incarico di materializzare la comprensione in codice eseguibile. 
 Genera, applica e valida la \textit{patch} operando all'interno di un ciclo reattivo con persistenza dello stato 
@@ -180,7 +179,7 @@ in caso di blocchi ripetuti. Parallelamente, conversation\_store.py persiste la 
 \textit{file} strutturati JSONL. Iniettare il fallimento dei tentativi precedenti previene cicli di riproposizione
  di \textit{patch} non compilabili o inadeguate. Al termine dei 
 tentativi configurabili (\textit{default}: 3), sandbox\_evaluator.py orchestra una compilazione e validazione 
-JUnit finali indipendenti per fornire una certificazione obiettiva del successo.
+JUnit finali indipendenti per fornire una certificazione obiettiva del successo.\\
 
 \textit{\textbf{Output}}: 
 \begin{itemize}

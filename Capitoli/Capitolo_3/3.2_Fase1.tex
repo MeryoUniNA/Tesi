@@ -312,7 +312,7 @@ di crash, identificazione dell'espressione nulla, risalita causale, e ranking de
 
 Il punto di ingresso dell'intera analisi diagnostica è il predicato \texttt{find\_npe\_cause/4}.
 La struttura completa del codice, derivata dall'analisi riga per riga, è:
-
+\enlargethispage{2\baselineskip}
 \begin{lstlisting}[language=Prolog, breaklines=false]
 find_npe_cause(Expr, Line, Cause, Loc) :-
     findall(
@@ -531,7 +531,7 @@ la più alta probabilità di successo.
 
 Il primo file, \texttt{root-cause.txt}, adotta un formato semi-strutturato che espone nel dettaglio 
 le catene causali individuate. La struttura tipica di ogni blocco diagnostico segue questo pattern:
-
+\enlargethispage{3\baselineskip}
 \begin{lstlisting}
 NPE at line(<class_id>, <line_num>) / Null Expression - <prolog_id>[<java_name>]
    can be caused by
@@ -1103,6 +1103,10 @@ def parse_logicfl_output(bug_dir: Path) -> FaultReport:
     )
 \end{lstlisting}
 
-Il \texttt{FaultReport} finale funge da interfaccia strutturata tra la fase di diagnostica appena descritta e il resto della pipeline (in particolare la fase di riparazione iterativa), preservando tutte le informazioni raccolte.
-Mettendo a disposizione le righe di codice sospette, il testo esplicativo dell'errore e l'analisi causale dettagliata, il sistema garantisce che le fasi successive di generazione della patch dispongano di tutto il contesto necessario per portare a termine la pipeline in modo ottimale.
+Il \texttt{FaultReport} finale funge da interfaccia strutturata tra la fase di diagnostica 
+appena descritta e il resto della pipeline (in particolare la fase di riparazione iterativa), 
+preservando tutte le informazioni raccolte.
+Mettendo a disposizione le righe di codice sospette, il testo esplicativo dell'errore e 
+l'analisi causale dettagliata, il sistema garantisce che le fasi successive di generazione 
+della patch dispongano di tutto il contesto necessario per portare a termine la pipeline in modo ottimale.
 
