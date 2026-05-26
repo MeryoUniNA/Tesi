@@ -477,51 +477,51 @@ per forzarne la scomposizione analitica del problema.
 \subsubsection{Fondamento Teorico del Chain-of-Thought Prompting}
 \label{subsubsec:3_3_3_1}
 Il Chain-of-Thought (CoT) prompting è una sofisticata tecnica di prompt
-engineering formalizzata per la prima volta da Wei et al.
-(2022). Il suo fondamento teorico si basa su un'intuizione tanto
-semplice quanto potente: istruendo esplicitamente un modello linguistico a produrre
-e articolare una catena di ragionamento intermedio prima di emettere
-la risposta finale, si migliora drasticamente la qualità dell'output. Pur
-non essendo dotati di capacità di ragionamento multi-step in senso
-algoritmico tradizionale, i grandi modelli trasformativi beneficiano immensamente di questa
-scomposizione, in quanto la probabilità di generare un token corretto
-al passo t aumenta in modo condizionale se preceduto da
-un ragionamento logico esplicitato nei token precedenti.
-Nel dominio specifico dell'Automated Program Repair, la necessità di
-adottare questo paradigma diventa imprescindibile. Chiedere a un LLM di
-generare direttamente il codice di una patch partendo da un
-report di errore equivale a forzare la risoluzione di un
-complesso problema ``multi-hop'' in un singolo salto cognitivo. In un
-simile scenario zero-shot, il modello è costretto a fondere simultaneamente
-quattro operazioni distinte: comprendere cosa fa di sbagliato il
-codice difettoso, dedurre quale dovrebbe essere il comportamento corretto, 
-isolare la differenza concettuale minima tra i due stati,
-e tradurre questa differenza in sintassi Java corretta.
-Costringere il modello a compiere tutte queste operazioni in parallelo
-lo spinge, per una mera questione di probabilità statistica, verso
-scorciatoie cognitive: il modello tenderà ad applicare pattern di fix
-generici e sovra-rappresentati nei dati di addestramento --- come l'aggiunta di
-un semplice null-check casuale --- rinunciando a formulare una soluzione mirata
-e contestualmente accurata per l'istanza in esame.
-La validità del CoT nell'APR è stata dimostrata empiricamente da
-sistemi come \texttt{ThinkRepair}, il quale ha evidenziato come l'anteposizione di un
-passo di ragionamento in linguaggio naturale (guidato da prompt generici
-come ``think step by step'') possa incrementare il tasso di
-successo su benchmark complessi come \texttt{Defects4J} di circa 15 punti percentuali.
-\texttt{HybridRepair} non si limita a recepire questo approccio, ma lo radicalizza
-profondamente: anziché affidarsi a una richiesta di ragionamento libera e
-destrutturata, costringe il modello a rispondere a tre interrogativi puntuali
-in un formato XML rigoroso, rendendo ogni fase del ragionamento
-parzialmente verificabile in modo automatico.
+engineering formalizzata per la prima volta da Wei et al. \cite{wei2022chain}. 
+Il suo fondamento teorico si basa su un'intuizione tanto semplice quanto potente: 
+istruendo esplicitamente un modello linguistico a produrre e articolare una catena 
+di ragionamento intermedio prima di emettere la risposta finale, si migliora 
+drasticamente la qualità dell'output. Pur non essendo dotati di capacità di 
+ragionamento multi-step in senso algoritmico tradizionale, i grandi modelli 
+trasformativi beneficiano immensamente di questa scomposizione; la probabilità di 
+generare un token corretto al passo $t$ aumenta in modo condizionale se preceduto da
+un ragionamento logico esplicitato nei token antecedenti \cite{wei2022chain}.
 
+Nel dominio specifico dell'Automated Program Repair, la necessità di adottare questo 
+paradigma diventa imprescindibile. Chiedere a un LLM di generare direttamente il 
+codice di una patch partendo da un report di errore equivale a forzare la risoluzione 
+di un complesso problema ``multi-hop'' in un singolo salto cognitivo. In un simile 
+scenario zero-shot, il modello è costretto a fondere simultaneamente quattro operazioni 
+distinte: comprendere cosa fa di sbagliato il codice difettoso, dedurre quale dovrebbe 
+essere il comportamento corretto, isolare la differenza concettuale minima tra i due 
+stati, e tradurre questa differenza in sintassi Java corretta. 
+
+Costringere il modello a compiere tutte queste operazioni in parallelo lo spinge, per 
+una mera questione di probabilità statistica, verso scorciatoie cognitive: il modello 
+tenderà ad applicare pattern di fix generici e sovra-rappresentati nei dati di 
+addestramento, come l'aggiunta di un semplice null-check casuale, rinunciando 
+a formulare una soluzione mirata e contestualmente accurata per l'istanza in esame.
+
+La validità del CoT nell'APR è stata dimostrata empiricamente da sistemi come 
+\texttt{ThinkRepair} \cite{yin2024thinkrepair}, il quale ha evidenziato come 
+l'anteposizione di un passo di ragionamento in linguaggio naturale (guidato da prompt 
+generici come ``think step by step'') possa incrementare il tasso di successo su 
+benchmark complessi come \texttt{Defects4J} di circa 15 punti percentuali. 
+\texttt{HybridRepair} non si limita a recepire questo approccio, ma lo radicalizza 
+profondamente: anziché affidarsi a una richiesta di ragionamento libera e destrutturata, 
+costringe il modello a rispondere a tre interrogativi puntuali in un formato XML 
+rigoroso, rendendo ogni fase del ragionamento parzialmente verificabile in modo automatico.
+
+
+\newpage
 \subsubsection{Architettura del System Prompt di SpecBuilder}
 \label{subsubsec:3_3_3_2}
 Dal punto di vista ingegneristico, il sistema di prompting implementato
-in \texttt{spec\_builder.py} sfrutta l'architettura a messaggi dell'API OpenAI (Chat Completions), imponendo
-una separazione netta tra un system prompt e un user
-prompt. Questa biforcazione è essenziale: il system prompt ha l'onere
+in \texttt{spec\_builder\\.py} sfrutta l'architettura a messaggi dell'API OpenAI, imponendo
+una separazione netta tra un \textit{system prompt} e un \textit{user
+prompt}. Questa biforcazione è essenziale: il system prompt ha l'onere
 di definire la persona assunta dal modello e di scolpirne
-i confini comportamentali, mentre lo user prompt inietterà i dati
+i confini comportamentali, mentre lo user prompt inietta i dati
 specifici dell'istanza.
 Il system prompt di \texttt{SpecBuilder} è il seguente:
 
@@ -531,29 +531,31 @@ You are an expert Java bug analyst. Your task is to reason about a bug \
 BEFORE writing any code. You must provide a precise natural-language \
 specification of the fix, NOT the code itself.
 
+Respond ONLY in the structured format below no code, no diffs, no patches.\
+"""
 \end{lstlisting}
 
-Nonostante sia composto da appena 57 parole, il \texttt{SPEC\_SYSTEM\_PROMPT} racchiune un'elevata
-densità di tecniche di instruction reinforcement e contenimento dei bias.
+Nonostante sia composto da pochissime parole, il \texttt{SPEC\_SYSTEM\_PROMPT} racchiude un'elevata
+densità di tecniche di \textit{instruction reinforcement} e contenimento dei bias \cite{white2023prompt}.
 Un elemento di spicco è l'utilizzo strategico del maiuscolo per
-forzare l'allineamento del modello. L'istruzione ``Your task is to reason
+forzare l'allineamento del modello su istruzioni critiche. L'istruzione ``Your task is to reason
 about a bug BEFORE writing any code'' utilizza il termine
-``BEFORE'' per spezzare una tendenza documentata nei modelli della famiglia
-\texttt{GPT-4o}: l'autocompletamento istintivo. Quando il contesto fornito in input è
-saturo di codice Java, il modello è fortemente incline a
-generare immediatamente ulteriore codice. Sancire una precedenza temporale rigida disinnesca
+``BEFORE'' per spezzare una tendenza documentata nei grandi modelli linguistici:
+l'autocompletamento istintivo. Essendo gli LLM basati su architetture autoregressive, quando il contesto fornito in input è
+saturo di codice Java, il modello è probabilisticamente incline a
+generare immediatamente ulteriore codice \cite{brown2020language}. Sancire una precedenza temporale rigida disinnesca
 questo riflesso condizionato, imponendo la modalità analitica.
-Analogamente, il prompt fa un uso mirato dei negative constraints.
+
+Analogamente, il prompt fa un uso mirato dei vincoli negativi (\textit{negative constraints}).
 La direttiva di fornire una specifica formale e ``NOT the
-code itself'' si affida alla doppia negazione intenzionale. La ricerca
-nell'ambito dell'instruction following ha infatti dovuto dimostrare che imporre esplicitamente
-divieti (``cosa non fare'') risulta paradossalmente più efficace delle istruzioni
-positive nel reprimere comportamenti che l'LLM eseguirebbe per ``inerzia'', come
-appunto la stesura del codice. Infine, l'uso del token vincolante
-``ONLY'' (``Respond ONLY in the structured format below'') funge da
-guardia contro le derive stilistiche, precludendo discorsi in prosa libera
+code itself'' (rafforzata da ``no code, no diffs, no patches'') si affida a un'esclusione esplicita. La ricerca
+sull'\textit{instruction following} ha dimostrato che delineare esplicitamente i divieti 
+risulta fondamentale per reprimere comportamenti che l'LLM eseguirebbe per inerzia generativa, 
+forzando il modello a deviare dalla sua distribuzione di probabilità predefinita \cite{ouyang2022training}. 
+Infine, l'uso del token vincolante ``ONLY'' funge da
+guardrail sintattico contro le derive stilistiche, precludendo discorsi in prosa libera
 o commenti accessori che comprometterebbero la successiva fase di parsing
-XML.
+XML deterministico \cite{white2023prompt}.
 
 \subsubsection{Il Template del Prompt Utente: Anatomia di \texttt{SPEC\_USER\_TEMPLATE}}
 \label{subsubsec:3_3_3_3}
@@ -620,48 +622,47 @@ Respond in this exact format:
 <minimal_fix>...</minimal_fix>
 \end{lstlisting}
 
-L'anatomia
-di questo template rivela una struttura bipartita, caratterizzata da una
-netta separazione logica sancita visivamente da un delimitatore orizzontale (---).
-Questa demarcazione divide il prompt in due macro-sezioni: il Blocco
-di Evidenza e il Blocco di Compito.
-Il Blocco di Evidenza La parte superiore del prompt aggrega
-tutte le informazioni diagnostiche fornite dalle fases precedenti. Questo blocco
-si apre con il Bug ID e l'esatta Fault Location,
-accompagnati dal codice sorgente del metodo incriminato. Subito dopo, vengono
-iniettati due componenti fondamentali generati dal modulo \texttt{LogicFL}: la Prolog
-Causal Analysis (un ancoraggio semantico profondo della catena che ha
-portato all'errore) e le Repair Directives derivate dall'analisi delle regole
-logiche. Il blocco si completa con le tracce empiriche del
+L'anatomia di questo template rivela una struttura bipartita, caratterizzata da una
+netta separazione logica sancita visivamente da un delimitatore orizzontale (\texttt{---}).
+Questa demarcazione divide il prompt in due macro-sezioni: il Blocco di Evidenza e il Blocco di Compito.
+
+\textbf{Il Blocco di Evidenza}: La parte superiore del prompt aggrega
+tutte le informazioni diagnostiche fornite dalle fasi precedenti. Questo blocco
+si apre con il Bug ID e l'esatta Fault Location, accompagnati dal codice sorgente del metodo incriminato. 
+Subito dopo, vengono iniettati due componenti fondamentali generati dal modulo \texttt{LogicFL}: la 
+Prolog Causal Analysis (un ancoraggio semantico profondo della catena che ha portato all'errore) e le 
+Repair Directives derivate dall'analisi delle regole logiche. Il blocco si completa con le tracce empiriche del
 fallimento, ovvero i Failing Tests e lo Stack Trace.
-In chiusura di questo primo blocco, appena prima della linea
-di separazione, troviamo la sezione ``Available API (Repair Ingredients)''. Questa
-sezione incorpora i campi della classe, i metodi pubblici, i
-tipi importati e le variabili locali estratti dall'Ingredient Forge. Tengo
-a sottolineare che il posizionamento di questi ingredienti API in
-fondo al Blocco di Evidenza non è affatto casuale (sebbene
-non esplicitamente discusso nei dettagli del documento sorgente, è una
-prassi consolidata nell'ottimizzazione dei prompt). Posizionare l'elenco delle API reali
-nelle immediate vicinanze della richiesta di esecuzione (il Task) permette
-di massimizzare il recency bias insito nell'architettura dei Transformer. I
-modelli linguistici tendono infatti a pesare maggiormente i token più
-prossimi alla fine del prompt (la cosiddetta ``coda'' del contesto)
-durante la generazione; garantendo che il vocabolario corretto sia l'ultima
-informazione fattuale processata, si minimizza drasticamente il rischio che l'attenzione
-del modello divaghi verso librerie allucinate.
-Il Blocco di Compito Oltre il separatore ---, inizia la sezione
-d'azione vera e propria, introdotta dall'intestazione ``Your Task''. In questa
-fase, il modello è chiamato ad agire come un analista
-rigoroso rispondendo a tre domande aperte e specifiche:
-Flawed Behavior: Viene richiesto di identificare con precisione chirurgica (indicando
-la riga esatta) cosa il metodo faccia di sbagliato.
-Intended Behavior: Si impone di dedurre cosa il metodo dovrebbe
-fare, inferendo l'intenzione originale dalle aspettative dei test falliti o
-dagli eventuali commenti JavaDoc.
-Minimal Fix: Rappresenta la sublimazione concettuale della patch. Si chiede
-di descrivere la più piccola alterazione logica in grado di
-risolvere il problema in puro linguaggio naturale, ribadendo per l'ennesima
-volta il divieto assoluto di scrivere codice.
+
+In chiusura di questo primo blocco, appena prima della linea di separazione, troviamo la sezione 
+``Available API (Repair Ingredients)''. Questa sezione incorpora i campi della classe, i metodi pubblici, 
+i tipi importati e le variabili locali estratti dall'Ingredient Forge. Il posizionamento di questi ingredienti API 
+in fondo al Blocco di Evidenza non è affatto casuale: posizionare l'elenco delle API reali nelle immediate 
+vicinanze della richiesta di esecuzione (il Task) permette di massimizzare il \textit{recency bias} insito 
+nell'architettura dei Transformer \cite{zhao2021calibrate}. I modelli linguistici tendono infatti ad allocare 
+una maggiore attenzione ai token posizionati agli estremi del contesto operativo --- fenomeno noto in letteratura 
+come effetto \textit{Lost in the Middle} \cite{liu2024lost}. Garantendo che il vocabolario corretto sia 
+l'ultima informazione fattuale processata prima delle istruzioni di generazione, si sfrutta la naturale tendenza 
+del modello a valorizzare la coda del contesto, minimizzando drasticamente il rischio che l'attenzione 
+del modulo divaghi verso librerie allucinate.
+
+\textbf{Il Blocco di Compito}: Oltre il separatore \texttt{---}, inizia la sezione d'azione vera e propria, 
+introdotta dall'intestazione ``Your Task''. La separazione strutturata mediante delimitatori testuali è una 
+tecnica computazionalmente documentata per impedire la sovrapposizione tra dati di contesto e istruzioni 
+operative \cite{white2023prompt}. In questa fase, il modello è chiamato ad agire come un analista rigoroso 
+rispondendo a tre domande aperte e specifiche:
+\begin{itemize}
+    \item \textit{Flawed Behavior}: Viene richiesto di identificare con precisione chirurgica (indicando la riga esatta) 
+    cosa il metodo faccia di sbagliato.
+    \item \textit{Intended Behavior}: Si impone di dedurre cosa il metodo dovrebbe fare, inferendo 
+    l'intenzione originale dalle aspettative dei test falliti o dagli eventuali commenti JavaDoc.
+    \item \textit{Minimal Fix}: Rappresenta la sublimazione concettuale della patch. Si chiede di 
+    descrivere la più piccola alterazione logica in grado di risolvere il problema in puro linguaggio naturale, 
+    ribadendo il divieto assoluto di scrivere codice.
+\end{itemize}
+Infine, l'incapsulamento della risposta all'interno di tag pseudo-XML strutturati (\texttt{<flaw\\ed\_behavior>}, ecc.) 
+costituisce un'applicazione del \textit{format manager pattern} \cite{white2023prompt}, essenziale per guidare 
+la codifica sintattica del modello e consentire un parsing deterministico a valle del sistema.
 
 \subsubsection{La Costruzione Dinamica del Prompt: \_build\_spec\_prompt()}
 \label{subsubsec:3_3_3_4}
@@ -669,7 +670,7 @@ Una volta definiti i template statici e raccolti tutti
 gli ingredienti necessari, il sistema deve fondere queste eterogenee
 fonti di informazione in un unico prompt testuale coerente.
 Questa delicata operazione di assemblaggio è demandata alla funzione
-interna \texttt{\_build\_spec\_prompt()}. Il design di questa funzione non si
+interna \texttt{\_build\_spec\_prompt()}.
 
 \begin{lstlisting}[language=Python]
 def _build_spec_prompt(
@@ -708,9 +709,9 @@ def _build_spec_prompt(
         local_variables=_format_list(ingredients.local_variables),
 \end{lstlisting}
 
-limita a una semplice interpolazione di stringhe, ma incarna
+Il design di questa funzione non si limita a una semplice interpolazione di stringhe, ma incarna
 un principio architetturale fondamentale per i sistemi software complessi:
-la graceful degradation (o degradazione con grazia).
+la \textit{graceful degradation}.
 Nel contesto dell'architettura \texttt{HybridRepair}, le informazioni diagnostiche primarie provengono
 dal modulo \texttt{LogicFL}, che genera catene causali in linguaggio
 Prolog. Idealmente, queste catene vengono arricchite e tradotte in
@@ -724,34 +725,35 @@ un formato imprevisto.
 Se la funzione \texttt{\_build\_spec\_prompt()} richiedesse rigidamente la presenza del
 grounding semantico, un qualsiasi fallimento in questa sotto-pipeline causerebbe
 il blocco irreversibile dell'intero processo di riparazione. In virtù
-del principio di graceful degradation, invece, la funzione implementa
+del principio di \textit{graceful degradation}, invece, la funzione implementa
 un pattern di fallback intelligente: qualora la risoluzione semantica
-fallisca per qualsivoglia motivo, il sistema ``degrada con grazia'',
-ripiegando automaticamente sull'utilizzo delle catene causali Prolog grezze. Sebbene
+fallisca per qualsivoglia motivo, il sistema 
+ripiega automaticamente sull'utilizzo delle catene causali Prolog grezze. Sebbene
 questo comportamento degradato produca un prompt meno ricco e
 testualmente più criptico per il modello linguistico, esso garantisce
 che l'execution non si interrompa, fornendo comunque all'LLM una
 traccia logica essenziale su cui basare il proprio ragionamento
 diagnostico.
-Completato l'assemblaggio dinamico e resiliente del prompt, \texttt{SpecBuilder} procede
-con l'invocazione del modello linguistico tramite il client Azure
-OpenAI. Un parametro di configurazione critico in questa chiamata
-API è l'impostazione di una temperatura estremamente bassa (\texttt{temperature=0.1}).
-Questa scelta ingegneristica merita una giustificazione precisa. Nei task
-di generazione creativa (come la stesura di un testo
-letterario o il brainstorming), valori di temperatura prossimi a
-1.0 sono incoraggiati per massimizzare la diversità e l'originalità
-dei token prodotti. Al contrario, nella diagnostica dei bug
-software, la creatività è una caratteristica profondamente controproducente.
-In questa fase, il sistema non sta cercando una
-soluzione ``originale'', ma la spiegazione fattualmente più probabile e
-rigorosa derivabile dalle prove empiriche fornite (test falliti, stack
-trace, analisi causale). Una temperatura pari a 0.1 annulla
-quasi del tutto la varianza del campionamento stocastico, costringendo
-il modello a convergere verso i token statisticamente più
-sicuri. Questo massimizza l'aderenza ai fatti, sopprime drasticamente le
-allucinazioni e garantisce un'elevata riproducibilità della specifica, una proprietà
-imprescindibile per il debugging e la validazione scientifica dell'architettura.
+
+Completato l'assemblaggio dinamico e robusto del prompt, \texttt{SpecBuilder} 
+procede con l'invocazione del modello linguistico tramite il client Azure OpenAI. 
+Un parametro di configurazione critico in questa chiamata API è l'impostazione 
+di una temperatura estremamente bassa (\texttt{temperature=0.1}). Tale scelta 
+architetturale è dettata dalla natura del dominio applicativo.
+
+Come dimostrato in letteratura \cite{sun2024exploring}, nei task di 
+generazione creativa valori di temperatura prossimi a 1.0 sono incoraggiati 
+per massimizzare la diversità dei token prodotti; al contrario, in compiti 
+che richiedono ragionamento logico deduttivo (come la diagnostica dei bug software), 
+la variabilità semantica risulta controproducente. In questa fase, il sistema ricerca 
+la spiegazione fattualmente più probabile derivabile dalle prove empiriche fornite 
+(test falliti, stack trace). L'utilizzo di una temperatura pari a 0.1 riduce drasticamente 
+la varianza del campionamento stocastico della funzione di attivazione Softmax, forzando 
+il modello a convergere verso i token statisticamente più sicuri. Questo approccio massimizza 
+l'aderenza ai fatti, mitiga la generazione di allucinazioni \cite{kabakus2026evaluating} e 
+garantisce un'elevata riproducibilità della specifica, proprietà imprescindibile per la 
+validazione scientifica dell'architettura.
+
 \subsubsection{Il Parsing XML della Risposta e la Struttura RepairSpec}
 \label{subsubsec:3_3_3_5}
 A valle della chiamata API, la risposta testuale prodotta
