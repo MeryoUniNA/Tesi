@@ -382,34 +382,34 @@ sono tre regole fondamentali che meritano un'analisi approfondita:
 
     \item[Il Divieto di Diff Testuali:]
     (\texttt{"ALWAYS use apply\_ast\_patch... Never output raw diffs."}):
-    Questa direttiva affronta uno dei problemi di fallback più
-    diffusi nella generazione di codice tramite LLM. Storicamente, se
-    lasciati liberi, i modelli tendono a generare frammenti di
-    codice o diff testuali sparsi all'interno di discorsi in
-    prosa libera. Questo comportamento è incompatibile con un'applicazione automatizzata.
-    La formulazione perentoria, rafforzata da una negazione esplicita (\texttt{"Never
-    output raw diffs"}), forza l'agente a delegare l'atto della
-    manipolazione del codice unicamente allo strumento strutturato \texttt{apply\_ast\_patch}.
-    Senza questo vincolo, il modello potrebbe teoricamente enunciare una
-    soluzione corretta ma fallire nell'applicarla sul file fisico, vanificando
-    la fase di \texttt{COMPILE} successiva poiché il sorgente rimarrebbe
-    di fatto inalterato.
+    Questa direttiva affronta uno dei problemi di \textit{fallback} più diffusi nella 
+    generazione di codice tramite agenti LLM. Se non rigorosamente vincolati, 
+    i modelli tendono infatti a eludere l'invocazione degli strumenti esterni, 
+    ripiegando su risposte conversazionali che includono frammenti di codice o diff 
+    testuali sparsi all'interno di discorsi in prosa libera. Come evidenziato in 
+    letteratura \cite{jimenez2024sweagent}, 
+    la generazione diretta di diff testuali (\textit{raw diffs}) da parte di un LLM è altamente 
+    prona a errori di formattazione e risulta intrinsecamente incompatibile con le pipeline di applicazione automatizzata.
+    La formulazione perentoria nel prompt, rafforzata da una negazione esplicita (\textit{negative constraint}, 
+    \texttt{"Never output raw diffs"}), forza l'agente a delegare l'atto della manipolazione del codice unicamente 
+    allo strumento strutturato \texttt{apply\_ast\_patch}. Senza questo stringente vincolo operativo \cite{qin2023toolllm}, 
+    il modello potrebbe teoricamente dedurre e descrivere a parole una soluzione corretta, ma fallire nell'applicarla fisicamente 
+    sul file. Ciò vanificherebbe irrimediabilmente la successiva fase di \texttt{COMPILE}, poiché il codice sorgente originario 
+    rimarrebbe di fatto inalterato.
 
     \item[Il Vincolo di Minimalità:]
     (\texttt{"Keep fixes MINIMAL..."}):
-    Questa regola recepisce un principio cardine della teoria dell'Automated
-    Program Repair (APR). Un assunto fondamentale della disciplina stabilisce
-    che le patch minime hanno una probabilità nettamente inferiore
-    di indurre regressioni su comportamenti del sistema che non
-    sono coperti dalla suite di test utilizzata per validare
-    il bug. Ricerche empiriche su sistemi allo stato dell'arte
-    (come AlphaRepair) hanno dimostrato statisticamente che le correzioni di
-    dimensione unitaria (le cosiddette patch \textit{single-hunk}, ovvero concentrate su
-    un singolo blocco logico contiguo) risultano possedere un grado
-    di plausibilità e generalizzazione di gran lunga superiore rispetto
-    alle modifiche distribuite (\textit{multi-hunk}). Forzando il modello a privilegiare
-    la minima perturbazione necessaria a ripristinare il comportamento atteso,
-    si mitiga drasticamente il problema dell'overfitting sui test falliti.
+    Questa direttiva recepisce un principio cardine della teoria dell'Automated Program Repair (APR) 
+    \cite{huang2024evolving}. Un assunto fondamentale della disciplina stabilisce infatti che 
+    le patch minime presentano una probabilità nettamente inferiore di indurre regressioni su comportamenti 
+    del sistema che non sono coperti dalla suite di test utilizzata per validare il bug. Ricerche empiriche 
+    su sistemi allo stato dell'arte \cite{xia2024fitrepair} hanno dimostrato che le correzioni 
+    di dimensione unitaria (le cosiddette patch \textit{single-hunk}, ovvero concentrate su un singolo 
+    blocco logico contiguo) risultano possedere un grado di plausibilità e generalizzazione di gran 
+    lunga superiore rispetto alle modifiche distribuite e invasive (\textit{multi-hunk}). Forzando 
+    il modello linguistico a privilegiare la minima perturbazione necessaria a ripristinare il 
+    comportamento atteso, si mitiga drasticamente il problema dell'overfitting sui test falliti, 
+    favorendo la generazione di patch genuinamente corrette e generalizzabili \cite{campos2025exploring}.
 \end{description}
 
 
@@ -450,8 +450,8 @@ risulta insufficiente:
 
     \item[Bug con API ambigue:] Anche quando la \texttt{RepairSpec} suggerisce esplicitamente
     il ricorso a una specifica API per risolvere il problema,
-    il rigoroso sistema di tipi di Java può presentare ostacoli
-    formidabili. La firma esatta del metodo da invocare potrebbe non
+    il rigoroso sistema di tipi di Java può presentare ostacoli. 
+    La firma esatta del metodo da invocare potrebbe non
     essere del tutto chiara a priori, specialmente in presenza di
     concetti avanzati come l'overload multiplo di metodi o parametri generici
     con vincoli complessi. Attraverso lo strumento \texttt{get\_method\_signature}, l'agente può attivamente
@@ -460,10 +460,10 @@ risulta insufficiente:
     del codice correttivo.
 \end{description}
 
-Un aspetto ingegneristico affascinante della fase \texttt{EXPLORE} riguarda il suo
-meccanismo di terminazione. La durata di questa fase --- misurabile
-in numero di round di invocazione degli strumenti --- non
-è rigidamente temporizzata, ma è deterministica solo in senso probabilistico.
+Un aspetto interessante della fase \texttt{EXPLORE} riguarda il suo
+meccanismo di terminazione. La durata di questa fase, misurabile
+in numero di round di invocazione degli strumenti,
+non è rigidamente temporizzata, ma è deterministica solo in senso probabilistico.
 L'agente valuta autonomamente la propria confidenza: quando ritiene di aver
 accumulato una massa critica di informazioni sufficiente, decide di agire.
 La transizione alla fase successiva (\texttt{PATCH}) avviene in modo del
@@ -495,30 +495,35 @@ generati, è sorretta da tre motivazioni profonde e imprescindibili per
 la robustezza di \texttt{HybridRepair}:
 
 \begin{description}
-    \item[Completezza sintattica garantita:] I sistemi basati su diff soffrono intrinsecamente
-    del problema dell'ambiguità contestuale. In un ciclo multi-tentativo come quello
-    di \texttt{PatchAgent}, il codice sorgente muta a ogni iterazione fallita.
-    Se l'agente generasse un diff, le sue righe di contesto
-    (le righe non modificate usate come ancore per capire dove
-    applicare la patch) potrebbero non corrispondere più esattamente al file
-    bersaglio modificato, causando il fallimento tecnico dell'applicazione della patch. Al
-    contrario, un metodo riscritto nella sua interezza è un blocco
-    logico autonomo, la cui applicazione non soffre di alcuna ambiguità
-    posizionale ed è sempre riapplicabile.
+    \item[Completezza sintattica garantita:]I sistemi basati su diff testuali (\textit{raw diffs}) 
+    si rivelano altamente fragili quando pilotati da modelli linguistici. Sebbene strumenti 
+    standard come \texttt{patch} o \texttt{git apply} siano concepiti per gestire l'evoluzione 
+    del codice, gli LLM faticano a generare righe di contesto esatte e a rispettare 
+    rigorosamente gli spazi di indentazione, incorrendo frequentemente in allucinazioni di tipo 
+    strutturale \cite{zhang2024llmhallucinations}. In un ciclo iterativo, un diff generato 
+    con un contesto testuale imperfetto provoca il fallimento immediato dell'applicazione della patch.
+    Al contrario, vincolare il modello a riscrivere e sostituire il metodo difettoso nella sua interezza 
+    sposta il dominio del problema dalla cruda manipolazione testuale alla sostituzione semantica, un approccio 
+    validato da architetture state-of-the-art come \textit{ChatRepair} \cite{xia2023chatrepair}. 
+    Un metodo rappresenta un blocco logico coeso e definito da una firma precisa; delegarne la sostituzione a 
+    livello di albero sintattico (AST), come esplorato dai recenti paradigmi \textit{semantics-aware} \cite{pabba2025semagent}, 
+    elimina le ambiguità legate al conteggio delle righe e alla formattazione spaziale. Questa strategia garantisce un 
+    tasso di successo nell'applicazione della patch nettamente superiore rispetto ai tradizionali diff riga per riga, 
+    risultando sempre coerente e riapplicabile.
 
-    \item[Compatibilità nativa con Tree-sitter:] L'infrastruttura di manipolazione del codice (\texttt{ast\_applier.py})
+    \item[Compatibilità con Tree-sitter:] L'infrastruttura di manipolazione del codice (\texttt{ast\_applier.py})
     non opera sul testo in maniera lineare, bensì sfrutta il
     \textit{Concrete Syntax Tree} (CST) generato da Tree-sitter. L'algoritmo di Tree-sitter
     individua il nodo esatto che modella il metodo (tipicamente un
-    nodo \texttt{method\_declaration} o \texttt{constructor\_declaration}) e isola il suo \textit{text span},
+    nodo \texttt{method\_declarati}\\\texttt{on} o \texttt{constructor\_declaration}) e isola il suo \textit{text span},
     ovvero le coordinate esatte di inizio e fine del blocco
     logico. Per sostituire chirurgicamente quel \textit{text span} nell'albero sintattico, l'input
     iniettato deve obbligatoriamente essere un metodo Java sintatticamente completo e
     autonomo. Fornire frammenti isolati causerebbe la rottura formale dell'albero.
 
-    \item[Prevenzione di patch parziali:] Una ben nota limitazione dei Large
+   \item[Prevenzione di patch parziali:] Una ben nota limitazione dei Large
     Language Models nel \textit{coding} è la tendenza a fornire risposte
-    ``pigre'' o iper-focalizzate. Se istruiti a generare solo la modifica,
+    ``pigre'' o iper-focalizzate \cite{zhang2024llmhallucinations}. Se istruiti a generare solo la modifica,
     i modelli tendono a concentrarsi unicamente sulla riga esatta dell'errore
     (ad esempio, inserendo un controllo \texttt{if (obj != null)}), ma
     trascurano spesso di bilanciare le parentesi graffe di chiusura a
@@ -526,7 +531,7 @@ la robustezza di \texttt{HybridRepair}:
     decine di righe prima. Imponendo l'onere di generare il codice
     dell'intero metodo, il sistema forza il modello a mantenere nel
     suo orizzonte di attenzione globale l'intera struttura logica, riducendo drasticamente
-    il rischio di errori di scope o sintassi sbilanciata.
+    il rischio di errori di scope o sintassi sbilanciata \cite{xia2023chatrepair}.
 \end{description}
 
 \subsubsection{La Fase COMPILE: Feedback Deterministico dal Compilatore}
@@ -538,15 +543,15 @@ dell'intero ciclo di riparazione.
 
 In questa fase emerge una dicotomia fondamentale tra la
 natura dell'agente generativo e quella degli strumenti di validazione.
-Il giudizio di un \textit{Large Language Model} (LLM) in
-merito alla correttezza del codice prodotto è intrinsecamente probabilistico:
+Il giudizio di un \textit{Large Language Model}  in
+merito alla correttezza del codice prodotto è di sua natura probabilistico:
 il modello genera la sequenza di token statisticamente più
 plausibile, ma rimane vulnerabile ad allucinazioni logiche, sviste sintattiche
 o errori legati ai tipi di dato. Al contrario,
 il compilatore Java (\texttt{javac}) opera come un sistema formale
 rigoroso, implementando in modo esatto la grammatica del linguaggio.
 Il suo verdetto è binario e inappellabile: la patch
-risulta sintatticamente e semanticamente valida sotto il profilo della
+risulta sintatticamente valida sotto il profilo della
 tipizzazione statica, oppure viene rifiutata.
 
 L'interazione tra l'agente e questo oracolo avviene invocando lo
@@ -554,7 +559,7 @@ strumento \texttt{compile\_check}. Sebbene l'implementazione completa si appoggi
 \texttt{sandbox\_evaluator.py}, la logica di interfaccia esposta all'LLM può essere
 riassunta nel seguente frammento di codice:
 
-\begin{lstlisting}[language=Python, caption={Logica di interfaccia dello strumento \texttt{compile\_check}.}, label={lst:tool_compile_check}]
+\begin{lstlisting}[language=Python, label={lst:tool_compile_check}]
 def tool_compile_check(context: ToolContext) -> str:
     """Verifica la compilazione del file sorgente modificato."""
     result = compile_patched_source(context.patched_dir, context.bug_dir)
@@ -567,7 +572,7 @@ def tool_compile_check(context: ToolContext) -> str:
         return f"COMPILATION ERROR:\n{error_msg}"
 \end{lstlisting}
 
-Un aspetto ingegneristico cruciale visibile in questa funzione è
+Un aspetto cruciale visibile in questa funzione è
 il troncamento dell'output a 3000 caratteri. Quando \texttt{javac} incontra
 un errore sintattico in un file Java (specialmente se
 l'errore risiede in firme di metodi o parentesi non
@@ -609,7 +614,7 @@ effettivamente il difetto senza alterare le funzionalità preesistenti.
 L'agente innesca questa verifica tramite lo strumento \texttt{run\_tests}, la
 cui logica si appoggia anch'essa al sandbox di valutazione:
 
-\begin{lstlisting}[language=Python, caption={Logica di interfaccia dello strumento \texttt{run\_tests}.}, label={lst:tool_run_tests}]
+\begin{lstlisting}[language=Python, label={lst:tool_run_tests}]
 def tool_run_tests(context: ToolContext) -> str:
     """Esegue la suite JUnit per validare la semantica della patch."""
     test_result = evaluate(context.patched_dir, context.test_classes)
@@ -676,25 +681,25 @@ tentativo.
 
 Per evitare di ricadere negli stessi errori, questo meccanismo
 di retry non si limita a lanciare una nuova
-esecuzione casuale, ma si fonda su tre pilastri ingegneristici
+esecuzione casuale, ma si fonda su tre pilastri 
 di adattamento: una modulazione adattiva della temperatura del modello,
-un isolamento rigoroso del workspace e l'iniezione della memoria
+l' isolamento del workspace e l'iniezione della memoria
 conversazionale dei fallimenti pregressi.
 
 \paragraph{1. Schedule di Temperatura Adattiva}
 Il primo pilastro governa la parametrizzazione del \textit{Large Language Model}.
-La temperatura di decodifica --- il parametro stocastico che
+La temperatura di decodifica, il parametro stocastico che
 controlla l'appiattimento della distribuzione di probabilità sui token in
-fase di campionamento --- non è statica, ma segue
+fase di campionamento, non è statica, ma segue
 uno schedule progressivo codificato nel modulo \texttt{shared/config.py}:
 
-\begin{lstlisting}[language=Python, caption={Definizione dello schedule di temperatura per i retry in \texttt{config.py}.}, label={lst:temp_schedule}]
+\begin{lstlisting}[language=Python, label={lst:temp_schedule}]
 # shared/config.py
 LLM_TEMPERATURE_SCHEDULE = [0.1, 0.2, 0.4]
 COMPILE_ERROR_TEMP_DOWNSHIFT = 0.1
 \end{lstlisting}
 
-La scelta ingegneristica di questi valori specifici (\texttt{0.1}, \texttt{0.2} e
+La scelta di questi valori specifici (\texttt{0.1}, \texttt{0.2} e
 \texttt{0.4}) risponde a una logica di esplorazione calibrata:
 
 \begin{description}
@@ -716,8 +721,7 @@ La scelta ingegneristica di questi valori specifici (\texttt{0.1}, \texttt{0.2} 
     per sfuggire agli eventuali \textit{local minima} della distribuzione generativa
     (dove il modello continua a proporre varianti dello stesso
     codice errato), pur mantenendosi entro un regime di rigore
-    formale che preserva la correttezza della sintassi e l'uso
-    valido delle API Java.
+    formale che preserva la correttezza della sintassi.
 \end{description}
 
 In aggiunta, il parametro \texttt{COMPILE\_ERROR\_TEMP\_DOWNSHIFT} introduce un'ottimizzazione adattiva reattiva:
@@ -735,7 +739,7 @@ codice sorgente causi falsi negativi, il sistema esegue un
 isolamento fisico su disco prima di instradare il nuovo
 tentativo:
 
-\begin{lstlisting}[language=Python, caption={Funzione di isolamento del workspace sorgente prima di un nuovo tentativo.}, label={lst:create_patched_copy}]
+\begin{lstlisting}[language=Python, label={lst:create_patched_copy}]
 def _create_patched_copy(self, attempt_num: int) -> Path:
     """
     Crea una directory isolata e una copia pulita del codice sorgente
@@ -752,7 +756,7 @@ def _create_patched_copy(self, attempt_num: int) -> Path:
 
 L'uso della libreria \texttt{shutil.copytree()} realizza una copia profonda e
 ricorsiva dell'intera gerarchia del progetto target. Questa operazione è
-vitale per la robustezza ingegneristica dell'agente: essa garantisce che
+vitale per la robustezza dell'agente: essa garantisce che
 ogni nuovo tentativo parta da uno stato immacolato (il
 file difettoso originale), azzerando completamente il rischio che patch
 fallite, parziali o scorrette apportate in tentativi precedenti possano
@@ -765,24 +769,23 @@ e il debugging del processo di riparazione.
 Il terzo pilastro è rappresentato dalla memoria a breve
 termine, essenziale per abilitare il meta-apprendimento dell'agente, che viene
 delegata a un modulo specifico.
-
-\subsubsection{La Memoria Conversazionale: \texttt{conversation\_store.py} e lo Schema ChatRepair}
+\newpage
+\subsubsection{La Memoria Conversazionale: \texttt{conversation\_store.py}}
 \label{subsubsec:3.4.2.7}
 L'evoluzione dell'\textit{Automated Program Repair} basato su Large Language Models
-ha evidenziato un limite architetturale catastrofico nei sistemi multi-tentativo
+ha evidenziato un limite architetturale nei sistemi multi-tentativo
 di prima generazione: l'assenza di ritenzione dello storico tra
 iterazioni successive. Ogni nuovo tentativo ricominciava fornendo al modello
 il medesimo prompt iniziale (sorgente del bug e istruzioni),
 senza comunicare quali patch fossero già state tentate né
 perché fossero fallite. Questo approccio ``smemorato'' portava inevitabilmente alla
-comparsa del cosiddetto \textit{loop sterile} (formalizzato nello sviluppo di
-\texttt{HybridRepair} come problema P3): il modello, deterministico per natura
+comparsa del cosiddetto \textit{loop sterile}: il modello, deterministico per natura
 in assenza di variazioni di prompt sostanziali, rigenerava ossessivamente
 la medesima patch (o sue varianti insignificanti) a ogni
 tentativo, polverizzando il budget computazionale senza apportare alcun progresso.
 
 Per scardinare questo loop sterile, \texttt{HybridRepair} adotta ed estende
-il paradigma \textit{ChatRepair}. Questo schema prevede che la storia
+il paradigma presente in \textit{ChatRepair}\cite{xia2023chatrepair}. Questo schema prevede che la storia
 conversazionale associata a ogni tentativo fallito venga persistita e
 successivamente distillata in un riassunto iniettato nel prompt del
 tentativo seguente come contesto negativo. Il modulo \texttt{patch\_agent/conversation\_store.py} funge
@@ -792,7 +795,7 @@ Per massimizzare la resilienza I/O, la storicizzazione della conversazione
 avviene sfruttando il formato JSONL (\textit{JSON Lines}), implementato attraverso
 la funzione \texttt{save()}:
 
-\begin{lstlisting}[language=Python, caption={Salvataggio della memoria conversazionale in formato \texttt{JSONL}.}, label={lst:conversation_save}]
+\begin{lstlisting}[language=Python, label={lst:conversation_save}]
 def save(self, attempt_num: int, messages: list):
     """
     Serializza i messaggi del tentativo in formato JSONL
@@ -804,13 +807,13 @@ def save(self, attempt_num: int, messages: list):
             f.write(json.dumps(msg) + "\n")
 \end{lstlisting}
 
-La scelta ingegneristica del formato JSONL in sostituzione a
+La scelta del formato JSONL in sostituzione a
 un monolitico array JSON classico non è puramente estetica,
 ma strutturale. Poiché ogni messaggio (composto dal proprio ruolo,
 contenuto e chiamate agli strumenti) è un record isolato
 su una riga testuale autonoma, eventuali interruzioni repentine del
-processo --- come uno spegnimento anomalo o un'eccezione di timeout
-severa --- non corromperanno in alcun modo i messaggi scritti
+processo, come uno spegnimento anomalo o un'eccezione di timeout
+severa, non corromperanno in alcun modo i messaggi scritti
 precedentemente. In un array JSON standard, il mancato bilanciamento
 della parentesi quadra di chiusura corromperebbe invece l'intero file.
 
@@ -819,7 +822,7 @@ sistema interroga il \texttt{conversation\_store.py} per costruire il ponte cogn
 tra il fallimento passato e il nuovo sforzo, invocando
 la funzione \texttt{get\_failure\_summary()}:
 
-\begin{lstlisting}[language=Python, caption={Estrazione del riassunto per il \textit{negative prompting} tra tentativi.}, label={lst:get_failure_summary}]
+\begin{lstlisting}[language=Python, label={lst:get_failure_summary}]
 def get_failure_summary(self) -> str:
     """
     Costruisce un riassunto dei tentativi falliti passati
@@ -838,13 +841,10 @@ def get_failure_summary(self) -> str:
     return summary
 \end{lstlisting}
 
-La stringa risultante da questo costrutto è un capolavoro
-di ingegneria dei prompt. Invece di chiedere genericamente al
-modello di ``cercare un'altra via'', il riassunto esplicita esattamente
+La stringa risultante da questo costrutto invece di chiedere genericamente al
+modello di ``cercare un'altra via'', esplicita esattamente
 quale azione ha compiuto l'assistente nell'ultimo messaggio utile del
-tentativo fallito e quale errore granulare ha scatenato (sia
-esso lo stack trace di JUnit o l'errore verboso
-di compilazione).
+tentativo fallito e quale errore ha scatenato.
 
 La chiave di volta di questa architettura risiede nella
 testata del messaggio: \texttt{"DO NOT REPEAT THESE APPROACHES"}. Questa
@@ -855,8 +855,7 @@ probabilità di sequenze logiche somiglianti al testo negato. Mettendo
 l'agente faccia a faccia con la prova inconfutabile del
 proprio precedente fallimento algoritmico, lo si obbliga a intraprendere
 diramazioni di ragionamento inesplorate, cancellando definitivamente il problema del
-loop sterile che affliggeva la prima generazione del software
-(v1) e rendendo le iterazioni di \texttt{HybridRepair} (v2) effettivamente
+loop sterile e rendendo le iterazioni di \texttt{HybridRepair} effettivamente
 progressive.
 
 \subsection{Il Loop di Tool-Use: \texttt{AzureClient.chat\_with\_tools}}
@@ -893,7 +892,7 @@ Il metodo \texttt{chat\_with\_tools()} astrae e implementa questo complesso prot
 in modo del tutto automatico, come illustrato nel seguente
 frammento logico:
 
-\begin{lstlisting}[language=Python, caption={Gestione del loop conversazionale e chiamate agli strumenti in \texttt{chat\_with\_tools()}.}, label={lst:chat_with_tools}]
+\begin{lstlisting}[language=Python, label={lst:chat_with_tools}]
 def chat_with_tools(self, messages: list, tools: list, max_tool_rounds: int) -> tuple:
     """Gestisce il loop conversazionale con invocazione automatica dei tool."""
     for _ in range(max_tool_rounds):
@@ -940,8 +939,8 @@ che meritano un'analisi approfondita:
     vista della gestione della memoria e del flusso dei
     dati, la lista dei messaggi viene passata per riferimento
     e modificata direttamente (tramite \texttt{.append()}) ad ogni iterazione del
-    loop. Questa scelta di design ingegneristico permette al chiamante
-    di livello superiore (il metodo \texttt{PatchAgent.\_run\_single\_attempt()}) di avere sempre
+    loop. Questa scelta permette al chiamante
+    di livello superiore (il metodo \texttt{PatchAgent.\_run\_\\single\_attempt()}) di avere sempre
     a disposizione l'intera storia conversazionale sincronizzata, anche qualora il
     metodo termini prematuramente. Di conseguenza, sebbene la funzione restituisca
     esplicitamente una tupla (\texttt{final\_text\_response}, \texttt{updated\_messages}), l'oggetto \texttt{updated\_messages} restituito non
@@ -976,7 +975,7 @@ una convergenza.
 
 Per scongiurare questo scenario, il metodo introduce il concetto
 di budget di round (rappresentato dal parametro \texttt{max\_tool\_rounds}), il
-quale agisce da rigoroso meccanismo di sicurezza (\textit{safety limit}).
+quale agisce da meccanismo di sicurezza (\textit{safety limit}).
 Nel contesto di \texttt{HybridRepair}, questo budget è matematicamente derivato
 dal limite base di passaggi dell'agente moltiplicato per una
 costante: \texttt{config.MAX\_AGENT\_STEPS * 3}.
@@ -1008,7 +1007,7 @@ l'API è quindi delegata a un wrapper protettivo denominato
 Il codice di questa funzione implementa un pattern di
 backoff esponenziale:
 
-\begin{lstlisting}[language=Python, caption={Meccanismo di backoff esponenziale per la gestione del rate-limiting.}, label={lst:call_with_retry}]
+\begin{lstlisting}[language=Python, label={lst:call_with_retry}]
 def _call_with_retry(self, messages: list, tools: list):
     """Esegue la chiamata API gestendo gli errori transitori di rate limit."""
     delays = [2, 4, 8]  # Backoff esponenziale in secondi
@@ -1030,14 +1029,14 @@ def _call_with_retry(self, messages: list, tools: list):
 
 La scelta di un intervallo di attesa crescente in
 modo esponenziale (2 secondi, poi 4, infine 8) è
-il protocollo ingegneristico ufficialmente raccomandato per gestire l'eccezione \texttt{RateLimitError}.
+il protocollo ufficialmente raccomandato per gestire l'eccezione \texttt{RateLimitError}.
 L'importanza vitale di questa progressione geometrica emerge drammaticamente durante
 l'esecuzione del sistema in modalità batch (es. tramite lo
 script \texttt{run\_all\_bugs.py}).
 
 Quando decine di thread paralleli tentano di correggere bug
 contemporaneamente, si espongono al rischio del cosiddetto \textit{thundering herd
-problem} (problema della mandria tonante). Se tutte le richieste
+problem}. Se tutte le richieste
 respinte per rate-limit attendessero un intervallo fisso (es. 3
 secondi) per poi ripresentarsi in blocco contro i server
 dell'API, causerebbero un nuovo collasso immediato, paralizzando indefinitamente l'infrastruttura.
@@ -1055,13 +1054,13 @@ specifici, definiti rigorosamente tramite gli schemi JSON richiesti dal protocol
 \textit{Function Calling} dell'API OpenAI, e implementati fisicamente come funzioni Python.
 
 Un aspetto architetturale fondamentale di questo modulo è la gestione
-dello stato attraverso il pattern \textit{Context Object} (definito dalla
-Gang of Four). Invece di passare singolarmente i percorsi delle
+dello stato attraverso il pattern \textit{Context Object}. Invece di passare singolarmente i percorsi delle
 directory o le liste delle classi di test a ogni
 singola funzione, il sistema aggrega l'intero contesto operativo del tentativo
 corrente all'interno di un oggetto mutabile condiviso:
 
-\begin{lstlisting}[language=Python, caption={Definizione del \texttt{ToolContext} tramite dataclass.}, label={lst:tool_context}]
+\newpage
+\begin{lstlisting}[language=Python, label={lst:tool_context}]
 @dataclass
 class ToolContext:
     bug_dir: Path
@@ -1069,7 +1068,7 @@ class ToolContext:
     test_classes: list[str]
 \end{lstlisting}
 
-L'iniezione di questo \texttt{ToolContext} riduce drasticamente il \textit{coupling} (accoppiamento)
+L'iniezione di questo \texttt{ToolContext} riduce drasticamente l' accoppiamento
 tra il dispatcher centrale (la funzione \texttt{create\_tool\_executor()}) e le
 singole implementazioni degli strumenti. Questa astrazione garantisce che l'aggiunta di
 nuovi strumenti al toolkit in futuro non richieda alcuna modifica
@@ -1082,7 +1081,7 @@ Il primo strumento a disposizione dell'agente è \texttt{read\_file}, essenziale
 per ispezionare fisicamente i file del progetto durante la fase
 esplorativa.
 
-\begin{lstlisting}[language=Python, caption={Strumento per la lettura formattata del codice sorgente.}, label={lst:tool_read_file}]
+\begin{lstlisting}[language=Python, label={lst:tool_read_file}]
 def tool_read_file(context: ToolContext, file_path: str) -> str:
     """Legge il contenuto di un file sorgente applicando numerazione di riga."""
     target_path = context.patched_dir / file_path
@@ -1122,7 +1121,7 @@ Quando il file in esame non contiene le risposte necessarie,
 l'agente può ampliare il proprio orizzonte visivo esplorando l'intero albero
 dei sorgenti tramite \texttt{search\_symbol}:
 
-\begin{lstlisting}[language=Python, caption={Strumento di ricerca globale nel progetto target.}, label={lst:tool_search_symbol}]
+\begin{lstlisting}[language=Python, label={lst:tool_search_symbol}]
 def tool_search_symbol(context: ToolContext, pattern: str) -> str:
     """Esegue una ricerca testuale ricorsiva nel progetto target."""
     import subprocess
@@ -1138,13 +1137,12 @@ def tool_search_symbol(context: ToolContext, pattern: str) -> str:
 Questo strumento agisce fondamentalmente come un wrapper attorno all'utility di
 sistema \texttt{grep -rnI --include=*.java}, eseguendo una ricerca \textit{case-sensitive}
 ricorsiva esclusivamente sui file Java. L'inclusione del flag \texttt{-I} è
-ingegneristicamente fondamentale poiché ignora i file binari (come i file
+ fondamentale poiché ignora i file binari (come i file
 \texttt{.class} precompilati), che altrimenti genererebbero un output illeggibile e dannoso
 per il prompt. Durante la fase \texttt{EXPLORE}, questo tool viene
 impiegato tipicamente per tre scopi: localizzare l'implementazione di un metodo
 citato nello stack trace ma non presente nel file corrente;
-trovare tutte le assegnazioni di una variabile risultata \texttt{null} (cruciale
-per i bug di tipo \texttt{UNINITIALIZED\_FIELD}); o individuare eventuali implementazioni
+trovare tutte le assegnazioni di una variabile risultata \texttt{null} o individuare eventuali implementazioni
 multiple di una data interfaccia che potrebbero scatenare comportamenti inattesi.
 Anche in questo caso, l'output è troncato a 20 risultati
 per non saturare la memoria a breve termine del modello.
@@ -1155,7 +1153,7 @@ Per risolvere le ambiguità legate al sistema di tipi rigoroso
 di Java, l'agente dispone dello strumento \texttt{get\_method\_signature}, che consente
 l'ispezione dinamica delle firme dei metodi:
 
-\begin{lstlisting}[language=Python, caption={Estrazione dinamica delle firme dei metodi pubblici.}, label={lst:tool_get_method_signature}]
+\begin{lstlisting}[language=Python, label={lst:tool_get_method_signature}]
 def tool_get_method_signature(context: ToolContext, class_path: str, method_name: str) -> str:
     """Estrae le firme reali dei metodi pubblici per risolvere ambiguità di overload."""
     # Riutilizzo del modulo di estrazione per coerenza
@@ -1183,7 +1181,7 @@ classi con dozzine di metodi esposti.
 Questo strumento sancisce la transizione dallo stato esplorativo allo stato
 esecutivo (\texttt{PATCH}), materializzando la modifica al codice:
 
-\begin{lstlisting}[language=Python, caption={Applicazione strutturale della patch sul \textit{Concrete Syntax Tree}.}, label={lst:tool_apply_ast_patch}]
+\begin{lstlisting}[language=Python, label={lst:tool_apply_ast_patch}]
 def tool_apply_ast_patch(context: ToolContext, file_path: str, method_name: str, new_method_body: str, target_line: int = None) -> str:
     """Sostituisce strutturalmente il metodo target nel file sorgente."""
     from patch_agent.ast_applier import apply_and_write
@@ -1216,6 +1214,7 @@ che la sostituzione ha accidentalmente eliminato righe cruciali non pertinenti
 al bug, può avvedersene immediatamente ancor prima di tentare la
 compilazione, migliorando le sue capacità di auto-correzione.
 
+\newpage
 \subsubsection{\texttt{compile\_check} e \texttt{run\_tests}: Gli Oracoli di Validazione}
 \label{subsubsec:3.4.4.5}
 Gli ultimi due strumenti del toolkit, \texttt{compile\_check} e \texttt{run\_tests},
@@ -1243,102 +1242,69 @@ riconsiderare, laddove serva, la logica semantica della sua patch.
 
 \subsection{Riparazione Strutturale via Tree-sitter: CST vs AST}
 \label{subsec:3.4.5}
-L'approccio alla modifica del codice sorgente rappresenta uno
-degli snodi architetturali più delicati nella progettazione di
-un sistema di Automated Program Repair. Tradurre un'intenzione
-correttiva in una mutazione fisica del file richiede
-un meccanismo che garantisca non solo l'accuratezza della
-modifica, ma anche la validità formale dell'artefatto risultante.
-Per soddisfare i severi requisiti di robustezza di
-\texttt{HybridRepair}, l'architettura adotta la manipolazione diretta del \textit{Concrete
-Syntax Tree} (CST) avvalendosi della libreria Tree-sitter, distaccandosi
-nettamente dai paradigmi testuali classici.
-
+L'approccio alla modifica del codice sorgente rappresenta uno degli snodi 
+architetturali più delicati nella progettazione diun sistema di Automated 
+Program Repair \cite{huang2024evolving}. Tradurre un'intenzione correttiva 
+in una mutazione fisica del file richiede un meccanismo che garantisca non 
+solo l'accuratezza della modifica, ma anche la validità formale dell'artefatto 
+risultante. Per soddisfare i severi requisiti di robustezza di\texttt{HybridRepair}, 
+l'architettura adotta la manipolazione diretta del \textit{ConcreteSyntax Tree}
+avvalendosi della libreria Tree-sitter, distaccandosi nettamente dai paradigmi testuali 
+classici.
 \subsubsection{I Limiti Fondamentali degli Approcci Testuali}
 \label{subsubsec:3.4.5.1}
-Prima di esplorare le specificità tecniche di Tree-sitter,
-è imperativo analizzare criticamente le ragioni per cui
-gli approcci tradizionali --- manipolazione tramite espressioni regolari
-(regex), diff unificati e operatori di mutazione ---
-risultano intrinsecamente inadeguati per un sistema APR di
-alta affidabilità.
+Prima di esplorare le specificità tecniche di Tree-sitter,è imperativo 
+analizzare criticamente le ragioni per cuigli approcci tradizionali, 
+manipolazione tramite espressioni regolari(regex), diff unificati e operatori di mutazione, 
+risultano inadeguati per un sistema APR di alta affidabilità.
 
-\paragraph{Il fallimento delle espressioni regolari e il problema del bilanciamento}
-Le espressioni regolari operano analizzando flussi monodimensionali di
-caratteri. Questo approccio si scontra frontalmente con la
-natura intrinsecamente gerarchica e ricorsiva del codice sorgente
-Java. Un costrutto come un metodo non è
-una semplice sequenza lineare, ma una struttura annidata
-che può includere blocchi condizionali \texttt{if/else}, cicli \texttt{for/while},
-blocchi \texttt{try/catch/finally}, oltre a costrutti complessi come classi
-anonime o espressioni lambda. Ciascuno di questi elementi
-introduce nuovi livelli di parentesi graffe che devono
-essere rigorosamente bilanciati.
-
-Dal punto di vista della teoria dei linguaggi
-formali, il problema del bilanciamento delle parentesi appartiene
-alla classe dei linguaggi liberi dal contesto (\textit{context-free}),
-mentre le espressioni regolari possono descrivere unicamente linguaggi
-regolari. Una regex semplicistica (come \verb|\w+\s*\([^)]*\)\s*\{[^}]*\}|) è in
-grado di catturare solo metodi piatti, fallendo inesorabilmente
-di fronte al primo blocco condizionale annidato. Storicamente,
-la prima iterazione architetturale (v1) di \texttt{HybridRepair} tentava
-di arginare questa limitazione combinando l'uso di regex
-con contatori manuali di parentesi graffe (\texttt{\_count\_braces()}). Tuttavia,
-questo approccio euristico scatenava il cosiddetto ``problema P1'':
-la generazione di patch contenenti parentesi sbilanciate o
-dichiarazioni di metodi frammentate o duplicate, costringendo il
-sistema a scartare un elevato numero di tentativi
-validi.
+\paragraph{Il fallimento delle espressioni regolari e il problema del bilanciamento}\mbox{}\\
+Le espressioni regolari operano analizzando flussi monodimensionali di caratteri. 
+Questo approccio si scontra frontalmente con la natura gerarchica e 
+ricorsiva del codice sorgente Java. Un costrutto come un metodo non è una semplice sequenza lineare,
+ ma una struttura annidata che può includere blocchi condizionali \texttt{if/else}, cicli 
+ \texttt{for/while}, blocchi \texttt{try/catch/finally}, oltre a costrutti complessi come 
+ classi anonime o espressioni lambda. Ciascuno di questi elementi introduce nuovi livelli di 
+ parentesi graffe che devono essere rigorosamente bilanciati. Dal punto di vista della teoria dei 
+ linguaggi formali, il problema del bilanciamento delle parentesi appartiene alla classe dei linguaggi
+  liberi dal contesto (\textit{context-free}), mentre le espressioni regolari possono descrivere
+   unicamente linguaggi regolari \cite{aho2006compilers}. Una regex semplicistica 
+   (come \verb|\w+\s*$[^)]*$\s*{[^}]*}|) è ingrado di catturare solo metodi piatti, 
+   fallendo inesorabilmente di fronte al primo blocco condizionale annidato. Storicamente,
+   la prima iterazione architetturale (v1) di \texttt{HybridRepair} tentava di arginare questa 
+   limitazione combinando l'uso di regex con contatori manuali di parentesi graffe (\texttt{\_count\_braces()}). 
+   Tuttavia, questo approccio euristico scatenava il cosiddetto ``problema P1'':la generazione di patch contenenti 
+   parentesi sbilanciate o dichiarazioni di metodi frammentate o duplicate, costringendo il sistema a scartare un 
+   elevato numero di tentativi validi.
 
 \paragraph{Il fallimento dei diff unificati nei sistemi multi-tentativo}
-Il formato \textit{unidiff} (standardizzato in strumenti come \texttt{git diff}
-e adottato da vecchi sistemi APR) codifica una
-modifica definendo un blocco testuale (l'\textit{hunk}) ancorato a
-specifiche righe di contesto preesistenti. Questo modello si
-fonda su un'assunzione di immutabilità del contesto: le
-righe circostanti la modifica devono coincidere in modo
-esatto con quelle del file bersaglio.
+Il formato \textit{unidiff} (standardizzato in strumenti come \texttt{git diff} e adottato 
+da vecchi sistemi APR) codifica una modifica definendo un blocco testuale (l'\textit{hunk}) 
+ancorato a specifiche righe di contesto preesistenti. Questo modello si fonda su un'assunzione
+ di immutabilità del contesto: le righe circostanti la modifica devono coincidere in modo esatto
+  con quelle del file bersaglio. In un agente iterativo guidato da un LLM, questa assunzione crolla miseramente. 
+  L'agente esplora molteplici variazioni, e i diff generati dal modello spesso fanno riferimento al codice 
+  sorgente fallato originale (fornito nel prompt iniziale). Tuttavia, al procedere dei round esplorativi,
+  il file bersaglio può accumulare piccole variazioni o trovarsi in uno stato transitorio alterato. 
+  Il disallineamento posizionale che ne consegue causa il rigetto del diff in fase di applicazione, 
+  scaturendo in un falso negativo: la logica della patch potrebbe essere brillante e corretta, ma il 
+  suo veicolo testuale (il diff) ne impedisce la materializzazione \cite{jimenez2024sweagent, xia2023chatrepair}.
 
-In un agente iterativo guidato da un LLM,
-questa assunzione crolla miseramente. L'agente esplora molteplici variazioni,
-e i diff generati dal modello spesso fanno
-riferimento al codice sorgente fallato originale (fornito nel
-prompt iniziale). Tuttavia, al procedere dei round esplorativi,
-il file bersaglio può accumulare piccole variazioni o
-trovarsi in uno stato transitorio alterato. Il disallineamento
-posizionale che ne consegue causa il rigetto del
-diff in fase di applicazione, scaturendo in un
-falso negativo: la logica della patch potrebbe essere
-brillante e corretta, ma il suo veicolo testuale
-(il diff) ne impedisce la materializzazione.
-
-\paragraph{Il fallimento dei mutanti e l'overfitting}
-L'ultimo approccio tradizionale è quello basato sui mutanti
-(impiegato in framework come GenProg o SPR). Questi
-sistemi alterano l'AST manipolando schemi predefiniti (operatori di
-mutazione), ad esempio forzando una condizione a \texttt{true},
-sostituendo un operatore relazionale o inserendo controlli di
-nullità (\textit{null-checks}).
-
-Questa strategia soffre di un doppio limite. In
-primo luogo, lo spazio esplorativo è confinato al
-ristretto set degli operatori implementati: se la risoluzione
-del bug richiede la stesura di un'istruzione logica
-non codificata da un mutante predefinito, la riparazione
-è matematicamente impossibile. In secondo luogo, e in
-maniera ancora più grave, i mutanti inducono un
-massiccio \textit{overfitting} (sovradattamento). Le mutazioni casuali tendono a
-generare patch che bypassano il caso di test
-fallito in modo parziale o accidentale, alterando o
-degradando silenziosamente comportamenti del programma per input non
-coperti dai test. Ricerche empiriche dimostrano che il
-tasso di \textit{overfitting} per alcuni di questi sistemi
-può superare il 90\% delle patch giudicate plausibili.
+  \paragraph{Il fallimento dei mutanti e l'overfitting}L'ultimo approccio tradizionale è quello basato sui 
+  mutanti. Questi sistemi alterano l'AST manipolando schemi predefiniti 
+  (operatori di mutazione), ad esempio forzando una condizione a \texttt{true}, sostituendo un operatore relazionale
+   o inserendo controlli di nullità (\textit{null-checks}). Questa strategia soffre di un doppio limite. 
+   In primo luogo, lo spazio esplorativo è confinato al ristretto set degli operatori implementati: se la 
+   risoluzione del bug richiede la stesura di un'istruzione logica non codificata da un mutante predefinito, 
+   la riparazione è matematicamente impossibile. In secondo luogo, e in maniera ancora più grave, i mutanti 
+   inducono un massiccio \textit{overfitting} (sovradattamento). Le mutazioni casuali tendono a generare 
+   patch che bypassano il caso di test fallito in modo parziale o accidentale, alterando o degradando 
+   silenziosamente comportamenti del programma per input non coperti dai test. Ricerche empiriche dimostrano 
+   che il tasso di \textit{overfitting} per alcuni di questi sistemi può superare il 90\% delle patch giudicate plausibili \cite{qi2015analysis, huang2024evolving}.
 
 \subsubsection{Introduzione a Tree-sitter: il Parser Incrementale ad Alta Fedeltà}
 \label{subsubsec:3.4.5.2}
-Per superare le fragilità intrinseche degli approcci testuali,
+Per superare le fragilità  degli approcci testuali,
 \texttt{HybridRepair} adotta Tree-sitter, una libreria di parsing incrementale
 e open-source sviluppata originariamente da GitHub. A differenza
 dei parser canonici integrati nei compilatori Java (come
@@ -1359,13 +1325,13 @@ potrebbe già presentare lievi imperfezioni sintattiche.
 
 Dal punto di vista dell'ingegneria del software, l'integrazione
 della libreria nativa (scritta in C) nell'ecosistema Python
-di \texttt{HybridRepair} richiede una gestione oculata delle risorse.
+di \texttt{HybridRepair} richiede una specifica gestione delle risorse.
 Per abbattere il costo computazionale, il modulo implementa
 un pattern architetturale noto come \textit{singleton lazy}. Di
 seguito il frammento di codice Python incaricato di
 questa orchestrazione:
 
-\begin{lstlisting}[language=Python, caption={Inizializzazione lazy del parser Tree-sitter tramite pattern singleton.}, label={lst:ensure_tree_sitter}]
+\begin{lstlisting}[language=Python, label={lst:ensure_tree_sitter}]
 def _ensure_tree_sitter():
     """Inizializzazione lazy del parser Tree-sitter come singleton."""
     global _TS_AVAILABLE, _JAVA_LANGUAGE, _PARSER
@@ -1424,17 +1390,17 @@ modificasse un nodo su un AST compilativo puro
 e in seguito ritraducesse l'intero albero in codice
 sorgente (processo di \textit{pretty-printing} o \textit{unparsing}), l'intero file
 verrebbe ricostruito. Questa ricostruzione disgregherebbe irrimediabilmente l'indentazione e
-lo stile originari adottati dagli ingegneri umani, riversando
+lo stile originari adottati dagli ingegneri, riversando
 modifiche estetiche su centinaia di righe non pertinenti
 e rendendo impossibile la validazione del diff.
 
 \paragraph{La Fedeltà Lessicale del CST di Tree-sitter}
 In totale contrapposizione, Tree-sitter orchestra un Concrete Syntax
-Tree (CST). Questa struttura non scarta alcunché, vantando
+Tree (CST). Questa struttura non scarta nulla, vantando
 una fedeltà lessicale \textit{pixel-perfect}. Ogni singolo commento, carattere
 di spaziatura invisibile, ritorno a capo, annotazione e
 parentesi trova il suo posto come nodo fisico
-nell'albero. Il pregio ingegneristico definitivo del CST si
+nell'albero. Il pregio definitivo del CST si
 materializza negli attributi di posizionamento: ogni nodo trasporta
 con sé uno \texttt{start\_byte} e un \texttt{end\_byte}, che
 indicano gli offset precisi al byte all'interno del
@@ -1478,11 +1444,11 @@ fornire i confini per le macro-strutture del codice.
 Di seguito è riportata una tabella riassuntiva dei
 principali nodi rilevanti:
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
-\caption{Nodi Tree-sitter principali per l'analisi e manipolazione del codice Java.}
 \label{tab:treesitter_nodes}
-\begin{tabular}{p{4.5cm} p{5.5cm} p{4cm}}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l l l}
 \toprule
 \textbf{Tipo nodo} & \textbf{Descrizione} & \textbf{Campo figlio rilevante} \\
 \midrule
@@ -1496,6 +1462,7 @@ principali nodi rilevanti:
 \texttt{identifier} & Identificatore testuale Java & (testo del nodo) \\
 \bottomrule
 \end{tabular}
+}
 \end{table}
 
 Questi nodi costituiscono il vocabolario attraverso cui il
@@ -1506,7 +1473,7 @@ informativi vengono impiegati dalla logica di riparazione di
 ispezione iterativa (tramite esplorazione a profondità DFS) per
 localizzare il nodo esatto di un metodo target:
 
-\begin{lstlisting}[language=Python, caption={Ricerca DFS iterativa per localizzare un nodo metodo tramite identificatore.}, label={lst:find_method_by_name_intro}]
+\begin{lstlisting}[language=Python, label={lst:find_method_by_name_intro}]
 def _find_method_by_name(root_node, target_name):
     """Ricerca iterativa DFS del metodo target all'interno del CST."""
     stack = [root_node]
@@ -1531,13 +1498,13 @@ def _find_method_by_name(root_node, target_name):
 
 In questo breve passaggio algoritmico, il sistema naviga
 fluidamente la gerarchia del CST, ispezionando unicamente i
-nodi del tipo \texttt{method\_declaration} e \texttt{constructor\_declaration} estratti dal
+nodi del tipo \texttt{method\_declaration} e \texttt{constructor\_dec\\laration} estratti dal
 vocabolario, estraendo dal campo nominativo \texttt{name} (che corrisponde
 all'\texttt{identifier} del metodo) il testo per il confronto
 e ottenendo, infine, il nodo risolto portatore dei
 corretti \textit{byte offset} su cui l'agente applicherà la
 propria manipolazione strutturale.
-
+\newpage
 \subsection{Precisione Chirurgica e Modifiche Posizionali}
 \label{subsec:3.4.6}
 Il modulo \texttt{patch\_agent/ast\_applier.py} implementa il meccanismo centrale della
@@ -1547,19 +1514,15 @@ sostituzione posizionalmente precisa di un metodo nel sorgente Java.
 Questa delicata operazione si articola in tre passaggi sequenziali:
 il parsing del file attraverso Tree-sitter, la localizzazione inequivocabile
 del nodo corrispondente al metodo target, e infine la
-sostituzione del relativo span di testo (\textit{text span}). L'ingegnerizzazione
-di ciascuno di questi passaggi è stata accuratamente calibrata
-per garantire la correttezza sintattica del risultato per costruzione,
-assicurando l'affidabilità della patch a prescindere dalla complessità o
-dalla verbosità del codice sorgente analizzato.
+sostituzione del relativo span di testo. 
 
 \subsubsection{L'Inizializzazione Lazy del Parser: \texttt{\_ensure\_tree\_sitter()}}
 \label{subsubsec:3.4.6.1}
 Il primo passo per poter operare sul codice è
 l'istanza del parser. Come precedentemente introdotto, l'inizializzazione della libreria
-avviene tramite la funzione \texttt{\_ensure\_tree\_sitter()}. Questa funzione non è
+avviene tramite la funzione \texttt{\_ensure\_tree\_s\\itter()}. Questa funzione non è
 isolata, ma è condivisa in modo architetturalmente trasversale tra
-i moduli \texttt{ast\_applier.py} (responsabile della riparazione) e \texttt{prolog\_grounding.py} (che
+i moduli \texttt{ast\_applier.py} (responsabile della riparazione) e \texttt{prolog\_groundi\\ng.py} (che
 se ne avvale per la risoluzione dei tipi durante
 la fase di \textit{grounding}). La condivisione sicura del singleton
 del parser si basa sulle proprietà del sistema di
@@ -1576,7 +1539,7 @@ essere analizzato per generare il \textit{Concrete Syntax Tree} (CST).
 Questa operazione è delegata alla funzione \texttt{\_parse\_java()}, la quale
 introduce un passaggio di codifica di fondamentale importanza:
 
-\begin{lstlisting}[language=Python, caption={Parsing del codice sorgente con gestione rigorosa della codifica in byte.}, label={lst:parse_java}]
+\begin{lstlisting}[language=Python, label={lst:parse_java}]
 def _parse_java(source_code: str):
     """Esegue il parsing del codice sorgente gestendo rigorosamente i byte."""
     parser = _ensure_tree_sitter()
@@ -1592,7 +1555,7 @@ def _parse_java(source_code: str):
 
 Il dettaglio implementativo critico visibile in questa funzione è
 l'esplicita conversione della stringa Python in una sequenza di
-byte tramite la codifica UTF-8 (\texttt{source\_code.encode('utf-8')}) prima di
+byte tramite la codifica UTF-8 (\texttt{source\_code.en\\code('utf-8')}) prima di
 invocare \texttt{parser.parse()}. Questa necessità deriva dall'architettura interna di
 Tree-sitter, il quale opera esclusivamente nello spazio dei byte.
 Di conseguenza, gli attributi posizionali restituiti dai nodi (come
@@ -1616,7 +1579,7 @@ le coordinate esatte del metodo all'interno dell'albero, la sostituzione
 fisica del codice viene eseguita dalla funzione \texttt{\_replace\_via\_ast()},
 il cui codice è riportato di seguito:
 
-\begin{lstlisting}[language=Python, caption={Sostituzione chirurgica del codice sorgente sfruttando gli offset di Tree-sitter.}, label={lst:replace_via_ast}]
+\begin{lstlisting}[language=Python, label={lst:replace_via_ast}]
 def _replace_via_ast(source_bytes: bytes, method_node, new_body_indented: str) -> bytes:
     """Esegue la sostituzione chirurgica sfruttando gli offset di Tree-sitter."""
     
@@ -1633,7 +1596,7 @@ def _replace_via_ast(source_bytes: bytes, method_node, new_body_indented: str) -
     return patched_bytes
 \end{lstlisting}
 
-L'eleganza formale e la robustezza di questa funzione risiedono
+La robustezza di questa funzione risiedono
 nell'operazione di slicing e concatenazione \texttt{source\_bytes[:start\_byte] + new\_body\_bytes + source\_bytes[end\_byte:]}.
 Analizziamo riga per riga la semantica di questa espressione:
 
@@ -1680,7 +1643,7 @@ del CST. Questa ricerca è implementata dalla funzione \texttt{\_find\_method\_b
 che incorpora una logica complessa per gestire gerarchie profonde
 e risolvere ambiguità:
 
-\begin{lstlisting}[language=Python, caption={Ricerca del nodo bersaglio con gestione dell'annidamento e disambiguazione degli overload.}, label={lst:find_method_advanced}]
+\begin{lstlisting}[language=Python, label={lst:find_method_advanced}]
 def _find_method_by_name(root_node, target_name: str, target_line: int = None):
     """Ricerca iterativa DFS del metodo target con disambiguazione degli overload."""
     stack = [root_node]
@@ -1727,7 +1690,7 @@ del runtime Python (tipicamente limitato a 1000 frame), scatenando
 un fatale \texttt{RecursionError}. Lo stack iterativo, gestito dinamicamente nell'heap
 di memoria, immunizza l'algoritmo da questa specifica vulnerabilità.
 
-In secondo luogo, la funzione implementa un sofisticato meccanismo
+In secondo luogo, la funzione implementa un meccanismo
 di disambiguazione guidato dal parametro \texttt{target\_line}. Nel vasto ecosistema
 di Defects4J, classi cardine come \texttt{DatasetUtilities} (nel progetto JFreeChart)
 o \texttt{StringUtils} (in Apache Commons Lang) presentano frequentemente dozzine
@@ -1735,18 +1698,18 @@ di metodi sovraccaricati (\textit{overload}), recanti il medesimo nome identific
 ma differenti firme e comportamenti. Se il sistema rintracciasse
 semplicemente il nome (ottenendo molteplici nodi candidati in \texttt{candidate\_nodes}),
 si affiderebbe al caso applicando la patch al primo
-della lista. Ricevendo la \texttt{target\_line} --- che il \texttt{PatchAgent}
-propaga attingendo alle informazioni di \texttt{FaultLocation} presenti nel \texttt{FaultReport}
---- l'algoritmo confronta questa coordinata con il \textit{bounding box}
+della lista. Ricevendo la \texttt{target\_line}, che il \texttt{PatchAgent}
+propaga attingendo alle informazioni di \texttt{FaultLocation} presenti nel \texttt{FaultReport},
+ l'algoritmo confronta questa coordinata con il \textit{bounding box}
 di ogni metodo candidato (\texttt{start\_point} ed \texttt{end\_point}). Solo il
 nodo che abbraccia fisicamente la riga difettosa viene selezionato,
-risolvendo in modo univoco ed elegante l'ambiguità degli overload
+risolvendo in modo univoco l'ambiguità degli overload
 multipli.
 
 \subsubsection{La Preservazione dell'Indentazione: \texttt{\_detect\_indentation()} e \texttt{\_reindent()}}
 \label{subsubsec:3.4.6.5}
 La preservazione dello stile di indentazione originale del codice
-non rappresenta un mero vezzo estetico, ma costituisce un
+ costituisce un
 requisito funzionale critico per la correttezza pratica del sistema.
 Se il \texttt{PatchAgent} iniettasse un metodo generato dall'LLM con
 un'indentazione discorde rispetto a quella del file target, il
@@ -1760,10 +1723,10 @@ errors}, specialmente in sistemi di \textit{Continuous Integration} (CI) che
 impongono regole di stile stringenti (come Checkstyle).
 
 Per scongiurare questo problema, il sistema implementa due funzioni
-dedicate: \texttt{\_detect\_indentation()} per campionare lo stile originario e \texttt{\_reindent()}
+dedicate: \texttt{\_detect\_\\indentation()} per campionare lo stile originario e \texttt{\_reindent()}
 per applicarlo dinamicamente al codice generato.
 
-\begin{lstlisting}[language=Python, caption={Rilevamento automatico dell'indentazione del codice originale.}, label={lst:detect_indentation}]
+\begin{lstlisting}[language=Python, label={lst:detect_indentation}]
 def _detect_indentation(source_code: str) -> str:
     """Rileva l'indentazione del prefisso della prima riga utile."""
     first_line = source_code.split('\n')[0]
@@ -1784,7 +1747,7 @@ di conoscere a priori le policy del progetto bersaglio.
 Una volta estratto il prefisso, il codice sostitutivo fornito
 dall'agente deve essere riallineato tramite \texttt{\_reindent()}:
 
-\begin{lstlisting}[language=Python, caption={Riallineamento relativo del codice generato dall'LLM.}, label={lst:reindent}]
+\begin{lstlisting}[language=Python, label={lst:reindent}]
 def _reindent(new_body: str, target_indent: str) -> str:
     """Applica una trasformazione di indentazione relativa al nuovo corpo del metodo."""
     lines = new_body.split('\n')
@@ -1811,7 +1774,7 @@ def _reindent(new_body: str, target_indent: str) -> str:
     return '\n'.join(reindented_lines)
 \end{lstlisting}
 
-Un aspetto ingegneristico fondamentale è la differenza tra un'imposizione
+Un aspetto fondamentale è la differenza tra un'imposizione
 di indentazione assoluta e la trasformazione di indentazione relativa
 qui implementata. Un approccio assoluto appiattirebbe forzatamente ogni riga
 a un margine fisso, distruggendo la struttura visiva del
@@ -1819,8 +1782,8 @@ codice. L'algoritmo relativo, invece, calcola il delta tra l'indentazione
 esterna del codice generato dall'LLM e il \texttt{target\_indent} prelevato
 dal file fisico; questa differenza viene poi applicata uniformemente
 a ogni riga. In questo modo, l'indentazione interna del
-metodo --- ovvero i delicati livelli di annidamento relativi
-di blocchi \texttt{if}, cicli \texttt{for} e costrutti \texttt{try/catch} ---
+metodo, ovvero i delicati livelli di annidamento relativi
+di blocchi \texttt{if}, cicli \texttt{for} e costrutti \texttt{try/catch},
 viene perfettamente preservata, traslando semplicemente l'intero blocco logico al
 livello di rientro corretto del file ospite. Da notare
 anche la gestione esplicita delle righe vuote (\texttt{if not line.strip()}).
@@ -1835,7 +1798,7 @@ Sebbene il sistema abbia definitivamente abbandonato i diff come
 veicolo per applicare la modifica, il formato \textit{unidiff} mantiene
 un ruolo di primaria importanza a livello diagnostico.
 
-\begin{lstlisting}[language=Python, caption={Calcolo del diff unificato diagnostico post-sostituzione.}, label={lst:compute_diff}]
+\begin{lstlisting}[language=Python, label={lst:compute_diff}]
 def _compute_diff(original: str, patched: str, filename: str) -> str:
     """Genera un diff unificato diagnostico post-applicazione."""
     import difflib
@@ -1875,10 +1838,11 @@ generazione del diff in un'unica interfaccia robusta per il
 
 Per garantire la massima resilienza, specialmente considerando l'eterogeneità di
 ambienti in cui il software potrebbe essere eseguito, il
-metodo implementa una sofisticata strategia di fallback graduale a
-due livelli (\textit{graceful degradation}):
+metodo implementa una strategia di fallback graduale a
+due livelli:
 
-\begin{lstlisting}[language=Python, caption={Orchestrazione della sostituzione con fallback degradante.}, label={lst:apply_method_replacement}]
+\newpage
+\begin{lstlisting}[language=Python, label={lst:apply_method_replacement}]
 def apply_method_replacement(file_path: Path, method_name: str, new_body: str, target_line: int = None) -> tuple[bool, str]:
     """Applica la sostituzione del metodo tramite una strategia di fallback graduale."""
     original_source = file_path.read_text(encoding='utf-8')
@@ -1929,8 +1893,7 @@ possibile in caso di file sorgente severamente corrotto in
 partenza) o l'infrastruttura binaria nativa in C della libreria
 \texttt{tree-sitter-java} non risultasse accessibile nel sistema operativo in uso,
 subentra il Livello Secondario. Questo si affida a un
-approccio basato su espressioni regolari (che ricalca i meccanismi
-della pipeline v1 di \texttt{HybridRepair}). Il fallback regex opera
+approccio basato su espressioni regolari Il fallback regex opera
 solo su file Java standard, richiede obbligatoriamente il parametro
 \texttt{target\_line} e, seppur soggetto al rischio potenziale di sbilanciare
 parentesi in metodi altamente complessi, offre una via di
@@ -1973,7 +1936,7 @@ file specifico, \texttt{config.properties}, presente nella directory radice di o
 bug. L'estrazione e la risoluzione di questo classpath avvengono
 tramite la funzione \texttt{\_read\_classpath()}:
 
-\begin{lstlisting}[language=Python, caption={Estrazione e risoluzione del classpath con supporto alla glob expansion.}, label={lst:read_classpath}]
+\begin{lstlisting}[language=Python, label={lst:read_classpath}]
 def _read_classpath(bug_dir: Path) -> str:
     """Estrae e risolve il classpath dal file config.properties."""
     config_path = bug_dir / "config.properties"
@@ -1999,11 +1962,9 @@ def _read_classpath(bug_dir: Path) -> str:
     return ":".join(resolved_entries)
 \end{lstlisting}
 
-La ratio ingegneristica di questo blocco di codice risiede
-nella sua resilienza di fronte all'eterogeneità dei progetti. Il
-file \texttt{config.properties} definisce il classpath utilizzando percorsi relativi alla
+Il file \texttt{config.properties} definisce il classpath utilizzando percorsi relativi alla
 directory del bug, concatenandoli tipicamente in una forma del
-tipo \texttt{class.path=../../lib/junit-4.11.jar:../../lib/hamcrest-core-1.3.jar:...}. La funzione si occupa di ancorare
+tipo \texttt{class.path=../../lib/j\\unit-4.11.jar:../../lib/hamcrest-core-1.3.jar:...}. La funzione si occupa di ancorare
 queste definizioni relative trasformandole in percorsi assoluti tramite l'invocazione
 di \texttt{(bug\_dir / entry).resolve()}. Un aspetto architetturale di vitale importanza
 è il supporto per la \textit{glob expansion}. Alcuni progetti
@@ -2025,7 +1986,7 @@ FSM richiederebbe interi minuti, rendendo proibitivi i tempi di
 esecuzione del sistema. Il sandbox supera questa limitazione implementando
 un approccio di compilazione selettiva:
 
-\begin{lstlisting}[language=Python, caption={Isolamento dei file alterati e compilazione selettiva tramite \texttt{javac}.}, label={lst:compile_patched_source}]
+\begin{lstlisting}[language=Python, label={lst:compile_patched_source}]
 def _find_modified_files(original_dir: Path, patched_dir: Path) -> list[str]:
     """Identifica i file Java modificati tramite confronto byte-a-byte."""
     import filecmp
@@ -2080,7 +2041,7 @@ indicano violazioni bloccanti e non interrompono la compilazione, ma,
 se passati all'agente LLM, inquinerebbero il prompt con rumore
 superfluo. Omettendoli, ci si assicura che il modello si
 concentri esclusivamente sui veri errori sintattici.
-
+\newpage
 \subsubsection{L'Esecuzione JUnit e il Parsing dell'Output}
 \label{subsubsec:3.4.7.3}
 L'oracolo semantico finale del ciclo di riparazione è demandato
@@ -2089,7 +2050,7 @@ opera in totale automazione e disaccoppiamento dagli IDE grafici,
 i test vengono innescati invocando \texttt{org.junit.runner.JUnitCore} in pura modalità
 \textit{command-line}:
 
-\begin{lstlisting}[language=Python, caption={Esecuzione dei test automatizzati in ambiente sandbox con limite temporale.}, label={lst:run_junit}]
+\begin{lstlisting}[language=Python,  label={lst:run_junit}]
 def _run_junit(patched_dir: Path, classpath: str, test_classes: list[str]):
     """Esegue la suite JUnit in modalità command-line con limite temporale."""
     import subprocess
@@ -2105,7 +2066,7 @@ def _run_junit(patched_dir: Path, classpath: str, test_classes: list[str]):
 \end{lstlisting}
 
 In questa esecuzione, il parametro \texttt{timeout=300} svolge il ruolo
-di scudo ingegneristico contro un fenomeno endemico dell'Automated Program
+di scudo  contro un fenomeno  dell'Automated Program
 Repair: le modifiche introdotte dall'agente, specialmente su bug legati
 alla sincronizzazione multithreading o ai flussi di I/O, possono
 accidentalmente generare deadlock o loop infiniti (\textit{infinite loops}) all'interno
@@ -2119,7 +2080,7 @@ standard output un report testuale grezzo. Questo output deve
 essere imperativamente analizzato per estrarre logiche diagnostiche avanzate. L'operazione
 è affidata alla funzione \texttt{\_parse\_junit\_output()}:
 
-\begin{lstlisting}[language=Python, caption={Parsing con espressioni regolari del log JUnit per l'estrazione delle metriche semantiche.}, label={lst:parse_junit_output}]
+\begin{lstlisting}[language=Python , label={lst:parse_junit_output}]
 def _parse_junit_output(output: str, original_failing_tests: set):
     """Analizza l'output testuale JUnit ed estrae le metriche di progresso."""
     import re
@@ -2145,7 +2106,7 @@ def _parse_junit_output(output: str, original_failing_tests: set):
     }
 \end{lstlisting}
 
-L'algoritmo impiega un'espressione regolare chirurgica (\verb|\.E\s+...|) per ispezionare
+L'algoritmo impiega un'espressione regolare (\verb|\.E\s+...|) per ispezionare
 il log testuale ed estrarre le firme esatte dei
 test falliti (scorporando il nome del metodo da quello
 della classe originaria). L'elenco ottenuto (\texttt{current\_failures}) viene incrociato dinamicamente
@@ -2157,9 +2118,8 @@ non riesce a far transitare tutti i test in
 stato verde simultaneamente. Misurare con esattezza quanti e quali
 test specifici abbiano invertito il loro stato da fallito
 a corretto (ad esempio, registrando 3 test passati su
-5) offre un indicatore di progresso ad altissima granularità.
-Esso segnala all'agente (e al ricercatore durante la fase
-di debugging post-hoc) che la rotta esplorativa è parzialmente
+5) offre un indicatore di progresso.
+Esso segnala all'agente che la rotta esplorativa è parzialmente
 valida e promettente, fornendo un fondamentale indicatore direzionale pur
 in assenza del raggiungimento totale del criterio di successo
 formale.
@@ -2172,11 +2132,11 @@ definite come \texttt{@dataclass} all'interno del modulo \texttt{shared/models.p
 di queste classi riflette una precisa filosofia di design:
 esse non si limitano a registrare il mero esito
 binario (successo o fallimento) dell'operazione di riparazione, ma fungono
-da veri e propri archivi permanenti e onnicomprensivi. Di
+da veri e propri archivi permanenti. Di
 seguito viene presentata la definizione architetturale di queste due
 entità:
 
-\begin{lstlisting}[language=Python, caption={Definizione formale delle strutture dati per la memorizzazione degli esiti.}, label={lst:models_patch_repair}]
+\begin{lstlisting}[language=Python, label={lst:models_patch_repair}]
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
 
@@ -2207,7 +2167,7 @@ class RepairResult:
         return f"Bug {self.bug_id}: {status}{winning} - Total attempts: {len(self.attempts)}"
 \end{lstlisting}
 
-La struttura \texttt{PatchAttempt} è stata meticolosamente progettata per abilitare
+La struttura \texttt{PatchAttempt} è stata  progettata per abilitare
 una completa tracciabilità post-hoc. Il suo attributo più gravido
 di informazioni è \texttt{agent\_messages}, il quale incapsula l'intera storia
 conversazionale intercorsa tra l'agente LLM e il sistema durante
@@ -2233,7 +2193,7 @@ monitoraggio a terminale durante l'esecuzione batch e concorrente su
 centinaia di bug (tramite lo script \texttt{run\_all\_bugs.py}).
 
 Al termine dell'esecuzione, l'onere della persistenza è delegato al
-modulo \texttt{services/reporter.py}, il quale serializza ricorsivamente l'oggetto \texttt{RepairResult} in
+modulo \texttt{services/rep\\orter.py}, il quale serializza ricorsivamente l'oggetto \texttt{RepairResult} in
 formato JSON. Il file risultante, salvato sotto il nome
 di \texttt{final\_report.json} all'interno della directory isolata \texttt{pipeline\_results/<bug\_id>/}, si cristallizza
 in un archivio storico permanente. Questa persistenza documentale è
@@ -2266,7 +2226,7 @@ per giungere a una soluzione. Per ogni tentativo $k$:
 
 \begin{description}
     \item[Isolamento Operativo:] La funzione \texttt{\_create\_patched\_copy()} clona il progetto target
-    in una directory sandbox vergine (\texttt{pipeline\_results/<bug\_id>/attempt\_k/patched\_source/}), azzerando il rischio
+    in una directory sandbox vergine (\texttt{pipeline\_results/<bug\_id>/attempt\_k/p\\atched\_source/}), azzerando il rischio
     di contaminazioni inter-tentativo.
     
     \item[Modulazione Stocastica:] Viene prelevata la temperatura di decodifica $T_k$
@@ -2276,26 +2236,27 @@ per giungere a una soluzione. Per ogni tentativo $k$:
     
     \item[Innesco del Tool-Use Loop:] Viene invocata la routine \texttt{\_run\_single\_attempt()}.
     Si istanzia il \texttt{ToolContext}, si predispone il dispatcher degli
-    strumenti (\texttt{create\_tool\_executor()}) e si forgia il prompt iniziale tramite
-    \texttt{\_build\_messages()}. Crucialmente, se l'agente si trova in un tentativo
+    strumenti (\texttt{create\_tool\_\\executor()}) e si crea il prompt iniziale tramite
+    \texttt{\_build\_messages()}. Se l'agente si trova in un tentativo
     $k > 1$, il prompt viene arricchito iniettando i
     riassunti dei fallimenti precedenti estratti dalla memoria conversazionale.
     
     \item[Dinamica Conversazionale:] Il controllo passa ad \texttt{AzureClient.chat\_with\_tools()}, che avvia
     un loop autonomo vincolato da un tetto massimo di
-    9 iterazioni (\texttt{max\_tool\_rounds}). Durante ogni round, il modello transita
-    fluidamente tra gli stati della FSM (\texttt{EXPLORE}, \texttt{PATCH}, \texttt{COMPILE},
+    9 iterazioni (\texttt{max\_too\\l\_rounds}). Durante ogni round, il modello si muove
+    tra gli stati della FSM (\texttt{EXPLORE}, \texttt{PATCH}, \texttt{COMPILE},
     \texttt{TEST}), invocando strumenti, manipolando l'albero CST del codice e
     analizzando gli output generati. Questo anello si spezza unicamente
     quando il modello emette un responso testuale finale privo
     di \texttt{tool\_calls} o quando esaurisce il budget di round.
     
-    \item[Persistenza ed Esame:] Conclusa l'interazione generativa, \texttt{conversation\_store.save()} interviene per
-    serializzare l'intero scambio in un robusto log JSONL. Immediatamente
+    \item[Persistenza ed Esame:] Conclusa l'interazione generativa, \texttt{conversation\_store.sav\\e()} interviene per
+    serializzare l'intero scambio in un log JSONL. Immediatamente
     dopo, il giudice supremo \texttt{\_verify\_final()} entra in scena, invocando
     congiuntamente il compilatore \texttt{javac} e il runner JUnit sulla
     sandbox per produrre un \texttt{TestResult} inappellabile.
-    
+\enlargethispage{2\baselineskip}
+
     \item[Valutazione del Verdetto:] Se l'oracolo restituisce \texttt{PASS}, il traguardo è
     raggiunto: \texttt{RepairResult.success} diventa \texttt{True}, il numero del tentativo corrente
     viene marcato come \texttt{winning\_attempt} e il macro-ciclo viene interrotto
@@ -2313,99 +2274,9 @@ per intero all'orchestratore di livello superiore \texttt{repair\_bug.py}. Quest
 del bug e liberando le risorse computazionali per l'analisi
 del difetto successivo.
 
-\subsection{Discussione Critica e Limitazioni}
-\label{subsec:3.4.10}
-L'architettura del \texttt{PatchAgent}, per quanto sofisticata, non è esente
-da compromessi ingegneristici. Un'analisi rigorosa delle prestazioni del sistema
-impone di valutarne criticamente sia i trionfi architetturali, sia
-le limitazioni strutturali e teoriche emerse durante le validazioni
-empiriche.
-
-\subsubsection{Superiorità Strutturale dell'Approccio Tree-sitter}
-\label{subsubsec:3.4.10.1}
-Il traguardo ingegneristico più significativo della Fase 3 risiede,
-senza dubbio, nell'adozione di Tree-sitter per la manipolazione strutturale
-del codice sorgente. I vantaggi di questo approccio rispetto
-alle metodologie testuali classiche si sono dimostrati sia teoricamente
-solidi che empiricamente inoppugnabili. Dal punto di vista teorico,
-l'operazione di sostituzione fondata sui \textit{byte-offset} del \textit{Concrete Syntax
-Tree} (CST) fornisce una garanzia matematica di correttezza sintattica
-per costruzione. Sul piano empirico, la transizione dalla pipeline
-di prima generazione (v1, basata su espressioni regolari e
-contatori euristici di parentesi) all'attuale modulo \texttt{ast\_applier.py} ha eradicato
-in modo definitivo il cosiddetto problema P1. Nella versione
-precedente del sistema, circa il 30\% dei tentativi di
-riparazione veniva invalidato da errori sintattici grossolani, quali parentesi
-graffe sbilanciate o dichiarazioni di metodi frammentate e duplicate.
-Nella pipeline v2, questo fenomeno di corruzione sintattica è
-totalmente scomparso. A ciò si aggiunge il beneficio tangibile
-derivante dalla preservazione dell'indentazione originale tramite le routine \texttt{\_detect\_indentation()}
-e \texttt{\_reindent()}, che producono diff estremamente compatti e leggibili,
-abbattendo il rischio di regressioni stilistiche in ecosistemi governati
-da rigide policy di \textit{Continuous Integration}.
-
-\subsubsection{Limitazioni del Fallback Regex}
-\label{subsubsec:3.4.10.2}
-Nonostante la robustezza del livello primario, la strategia di
-fallback basata su espressioni regolari (\texttt{\_find\_method\_bounds\_regex()}) eredita tutte le
-vulnerabilità intrinseche degli approcci puramente testuali. Questo meccanismo secondario
-garantisce un comportamento corretto quasi esclusivamente in presenza di
-metodi caratterizzati da un singolo livello di annidamento logico.
-Di fronte a strutture sintattiche complesse, tipiche del codice
-\textit{enterprise}, come classi anonime o interfacce annidate all'interno di
-metodi omonimi, l'algoritmo regex rischia di calcolare confini posizionali
-errati. Questa imprecisione teorica può degenerare nell'inclusione o esclusione
-accidentale di porzioni di codice vitali. La conservazione di
-questo modulo nell'architettura è giustificata unicamente da ragioni di
-resilienza estrema: in ambienti operativi vincolati dove l'installazione delle
-dipendenze binarie native in C (necessarie per \texttt{tree-sitter-java}) risulta
-preclusa, il sistema deve poter tentare una riparazione in
-regime di \textit{graceful degradation}, pur accettando una drastica riduzione
-delle garanzie formali.
-
-\subsubsection{Il Problema del Budget di Tool-Call e della Profondità Esplorativa}
-\label{subsubsec:3.4.10.3}
-Un'ulteriore limitazione prestazionale è legata alla configurazione della Macchina
-a Stati Finiti, specificamente al budget massimo di interazioni
-concesso all'agente. L'assegnazione di 9 round di \textit{tool-call} per
-ciascun tentativo (\texttt{MAX\_AGENT\_STEPS * 3}) rappresenta un compromesso pragmatico
-tra la necessità di una profonda esplorazione contestuale e
-l'imperativo di contenere i costi computazionali e finanziari delle
-API. Tuttavia, l'analisi empirica ha evidenziato come questo budget
-risulti insufficiente per la risoluzione di difetti che esigono
-un'indagine \textit{cross-class} particolarmente estesa. Bug notoriamente complessi all'interno del
-dataset Defects4J, quali \texttt{Jsoup-22}, \texttt{JacksonDatabind-80} o \texttt{Lang-33}, traggono origine
-da radici causali (come valori nulli o stati inconsistenti)
-che si propagano attraverso gerarchie di ereditarietà multi-livello, spesso
-originate in superclassi astratte non fornite nel contesto iniziale
-del prompt. In queste istanze, l'agente esaurisce sistematicamente i
-propri round esplorativi senza riuscire a sintetizzare la patch,
-marcando il tentativo come fallito per timeout operazionale. Sebbene
-un innalzamento del parametro \texttt{MAX\_AGENT\_STEPS} estenderebbe l'orizzonte investigativo dell'agente,
-ciò comporterebbe un incremento lineare e potenzialmente insostenibile dei
-costi di inferenza per tentativo.
-
-\subsubsection{Dipendenza dall'Accuratezza della \texttt{RepairSpec}}
-\label{subsubsec:3.4.10.4}
-Infine, l'architettura di \texttt{PatchAgent} soggiace al principio assiomatico dell'ingegneria
-del software noto come ``\textit{garbage-in, garbage-out}''. L'agente elegge la
-\texttt{RepairSpec} (ricevuta dalla Fase 2) a propria direttiva concettuale
-suprema, declinandola in codice sorgente senza sottoporla a un'ulteriore
-validazione formale. Qualora le fasi diagnostiche antecedenti producessero una
-specifica fallace, derivata da catene causali incomplete formulate da
-\texttt{LogicFL} o da un travisamento semantico perpetrato da \texttt{SpecBuilder},
-il \texttt{PatchAgent} orienterebbe inesorabilmente i propri sforzi verso una
-soluzione non corretta. Sebbene l'iniezione della memoria conversazionale e
-l'uso del \textit{negative prompting} (\texttt{conversation\_store.py}) stimolino il modello a
-divergere da una strategia iniziale inefficace nei tentativi successivi,
-esse non assicurano la convergenza verso il fix corretto
-se l'assunto di partenza è fondamentalmente errato. L'integrazione di
-moduli di auditing preliminare, come \texttt{SpecCritic}, attenua sensibilmente questa
-vulnerabilità sistemica, ma non è in grado di neutralizzarla
-del tutto.
 
 \subsection{Sintesi}
-\label{subsec:3.4.11}
+\label{subsec:3.4.10}
 La Fase 3 dell'architettura \texttt{HybridRepair} concretizza un ecosistema di
 riparazione agentica che armonizza inferenza neurale e determinismo formale.
 Questo capitolo ha delineato l'integrazione sinergica di quattro contributi
@@ -2414,9 +2285,8 @@ autonomo:
 
 \begin{table}[htbp]
 \centering
-\caption{Sintesi dei contributi tecnici della Fase 3 di \texttt{HybridRepair}.}
 \label{tab:sintesi_fase3}
-\begin{tabular}{p{3.5cm} p{3.5cm} p{4.5cm} p{3.5cm}}
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.8cm} >{\raggedright\arraybackslash}p{4.6cm} >{\raggedright\arraybackslash}p{4.2cm} >{\raggedright\arraybackslash}p{3.4cm}}
 \toprule
 \textbf{Contributo} & \textbf{Modulo} & \textbf{Meccanismo} & \textbf{Problema Risolto} \\
 \midrule
@@ -2428,25 +2298,3 @@ Sandbox deterministico & \texttt{sandbox\_evaluator.py} & \texttt{javac} + \text
 \end{tabular}
 \end{table}
 
-La superiorità architetturale derivante dall'utilizzo di Tree-sitter rispetto alle
-euristiche testuali classiche eleva la manipolazione del codice a
-un livello di rigore matematico. Sostituendo chirurgicamente \textit{text span}
-delimitati da \textit{byte-offset} all'interno del CST, il sistema sancisce
-due proprietà formali inalienabili: la correttezza sintattica per costruzione
-dell'artefatto risultante e la perfetta preservazione dello stile e
-dell'indentazione del progetto ospite.
-
-L'orchestrazione di queste componenti culmina in una Macchina a
-Stati Finiti implicita che guida un LLM attraverso gli
-stati di \texttt{EXPLORE}, \texttt{PATCH}, \texttt{COMPILE}, \texttt{TEST} e \texttt{RETRY}. All'interno
-di questo ciclo vitale, l'agente trascende la mera generazione
-stocastica per divenire un'entità reattiva, capace di auto-correggere le
-proprie sviste interpretando autonomamente i verdetti deterministici emessi dal
-compilatore e dal test runner. La sintesi tra l'adattamento
-termico (\textit{schedule} di temperatura), l'isolamento ambientale (sandbox) e il
-meta-apprendimento indotto dalla memoria conversazionale JSONL dota \texttt{HybridRepair} di
-una reale capacità di apprendimento intra-sessione. È proprio questa
-attitudine auto-correttiva e riflessiva a elevare \texttt{HybridRepair} oltre i
-confini dei sistemi APR di prima generazione, consolidando un
-paradigma in cui l'intelligenza artificiale generativa è finalmente imbrigliata
-dai vincoli rigorosi dell'ingegneria del software.
