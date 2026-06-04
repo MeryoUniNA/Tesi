@@ -1,0 +1,62 @@
+\chapter{Strumenti Fondamentali e Toolkit Architetturale}
+
+Per superare i limiti evidenziati nei paragrafi precedenti e concretizzare l'idea di un approccio ibrido, 
+l'architettura di \textit{HybridRepair} poggia sull'integrazione di tre strumenti fondamentali. 
+Ognuno di essi è stato selezionato per colmare le lacune degli altri, definendo una rigorosa separazione dei 
+compiti tra analisi formale, manipolazione strutturale e sintesi generativa.
+
+\subsection{LogicFL: Ragionamento Formale e Deduttivo}
+Il primo pilastro del sistema è \textit{LogicFL}, un recente strumento di \textit{Fault Localization} 
+specificamente progettato per identificare le cause profonde delle \textit{NullPointerException}. 
+A differenza degli approcci tradizionali basati sullo spettro (SBFL) o sui modelli probabilistici, 
+LogicFL utilizza la programmazione logica (Prolog) per imitare fedelmente il processo di deduzione 
+umana impiegato dagli sviluppatori durante il \textit{debugging} \cite{kim2024identifying}. 
+
+Il funzionamento di LogicFL si articola attraverso l'estrazione di fatti logici e l'applicazione di 
+regole di inferenza. Inizialmente, lo strumento impiega un analizzatore statico per estrarre fatti 
+semantici e strutturali dal codice sorgente (\textit{Code Facts} e \textit{Semantic Facts}), catturando 
+ad esempio gerarchie di classi, invocazioni di metodi e assegnazioni. Parallelamente, 
+un analizzatore dinamico strumenta il codice iniettando delle "sonde" (\textit{probes}) per monitorare 
+e registrare l'effettivo valore assunto dalle espressioni durante l'esecuzione dei test falliti \cite{kim2024identifying}. 
+
+Questi fatti vengono aggregati all'interno di una \textit{Knowledge Base} in SWI-Prolog, 
+su cui opera un localizzatore di guasti (\textit{FaultLocalizer}). Attraverso un 
+set di regole logiche predefinite, LogicFL identifica innanzitutto l'espressione nulla che ha 
+materialmente innescato il crash \cite{kim2024identifying}. Successivamente, traccia a ritroso 
+il percorso del valore \textit{null} esplorando diverse origini causali: dall'identificazione 
+dell'origine esatta in cui il valore \textit{null} è stato generato o restituito (\textit{Origin scheme}), 
+all'individuazione dei percorsi che hanno fatto da tramite per il suo trasferimento (\textit{Transfer scheme}) 
+\cite{kim2024identifying}. All'interno di \textit{HybridRepair}, LogicFL funge da "Oracolo dei Guasti" deterministico, 
+fornendo all'intelligenza artificiale un referto causale privo di allucinazioni.
+
+\subsection{Tree-sitter: Parsing Incrementale ad Alta Fedeltà}
+Mentre LogicFL fornisce le coordinate logiche del difetto, la traduzione di queste direttive in un contesto 
+comprensibile per il modello generativo e l'applicazione materiale della \textit{patch} richiedono uno strumento 
+di \textit{parsing} del codice estremamente preciso. Per questo compito, l'architettura integra \textit{Tree-sitter}, 
+un generatore di parser incrementale ad altissime prestazioni.
+
+A differenza dei tradizionali analizzatori statici che producono un \textit{Abstract Syntax Tree} (AST) scartando 
+informazioni "superflue" come spaziature, formattazione e commenti, Tree-sitter genera un \textit{Concrete Syntax Tree} (CST). 
+Il CST mantiene una fedeltà assoluta al file testuale originale, registrando le coordinate spaziali esatte 
+(riga e colonna) di ogni singolo byte e nodo sintattico. 
+Questa caratteristica è di vitale importanza per \textit{HybridRepair}: permette di estrarre chirurgicamente il 
+frammento di codice rilevante (isolandolo dal resto del file) per fornirlo al \textit{prompt} dell'LLM senza 
+distorcere la visualizzazione originale. Soprattutto, garantisce che l'applicazione della \textit{patch} finale 
+generata dal modello avvenga tramite manipolazioni dirette dell'albero sintattico. Questo previene i classici errori 
+di corruzione del codice (come parentesi sbilanciate o formattazione rotta) tipici degli strumenti che applicano le 
+\textit{patch} tramite semplici differenze testuali (\textit{diff}) o espressioni regolari.
+
+\subsection{Large Language Models (GPT-4o) e Function Calling}
+L'ultimo pilastro è costituito dal motore generativo, istanziato mediante un \textit{Large Language Model}, 
+nello specifico GPT-4o, (lo stesso modello utilizzatp da VibeRepair \cite{zhu2026specification}). All'interno della pipeline, il modello è deliberatamente sollevato dal compito di localizzare il guasto, 
+operazione per la quale risulta incline all'errore. Il suo ruolo è invece rilegato 
+esclusivamente alla fase di \textit{sintesi} e \textit{ragionamento semantico} a valle della diagnosi formale.
+
+Una caratteristica fondamentale che motiva l'uso di modelli avanzati come GPT-4o in questa architettura è il supporto 
+nativo al paradigma del \textit{Function Calling} (o \textit{Structured Outputs}). Affinché un LLM possa agire in modo 
+iterativo e autonomo all'interno di una Macchina a Stati Finiti (FSM) progettata per compilare e testare il codice, è 
+imprescindibile che le sue risposte non siano semplice testo discorsivo, ma strutture dati rigorosamente tipizzate e 
+interpretabili algoritmicamente (ad esempio, formati JSON validati). Grazie a questa funzionalità, il modello può generare le 
+specifiche di riparazione (\textit{RepairSpec}) e il codice correttivo seguendo i vincoli di interfaccia 
+richiesti da \textit{HybridRepair}, chiudendo così il cerchio tra la deduzione logica di Prolog, la manipolazione strutturale 
+di Tree-sitter e la flessibilità generativa dell'Intelligenza Artificiale.

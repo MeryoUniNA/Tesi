@@ -1,0 +1,175 @@
+\chapter{L'Idea: Unire Logica e Intelligenza Artificiale (L'Approccio Ibrido)}
+
+Come abbiamo visto nel capitolo precedente, il vero problema dei moderni sistemi di 
+riparazione automatica del codice (APR) non è la mancanza di ``creatività'' nel generare 
+soluzioni, ma la mancanza di una \textbf{guida rigorosa}. Se lasciamo che i Large Language 
+Model  facciano tutto da soli senza paletti rigidi, finiscono per inventarsi parti di codice inesistenti 
+(allucinazioni) o creare soluzioni che funzionano solo in apparenza (overfitting). 
+D'altra parte, gli strumenti puramente logici e formali sono dei chirurghi perfetti nel trovare 
+\textit{dove} si trova l'errore, ma non hanno la flessibilità mentale per scrivere il codice che 
+lo risolve in un contesto reale.
+
+L'idea alla base di \textbf{HybridRepair} nasce proprio da qui: i due mondi, quello logico/simbolic
+ e quello neurale/LLM, non sono nemici. Al contrario, sono \textbf{complementari}. Ognuno dei due è 
+ fortissimo esattamente dove l'altro è debole.
+
+\section{La Filosofia}
+
+Il principio fondamentale di HybridRepair è una netta \textbf{separazione dei compiti}:
+
+\begin{quote}
+\textbf{L'analisi logica si occupa di trovare la causa del problema (diagnosi). L'LLM si occupa di scrivere il codice per risolverlo (sintesi).}
+\end{quote}
+
+Non si tratta di un semplice compromesso, ma di una scelta logica ben precisa dovuta alla natura diversa 
+dei due compiti.
+
+\textbf{La diagnosi:} Capire da dove arriva un valore \texttt{null}, seguire il 
+percorso di un errore tra varie funzioni e beccare il punto esatto in cui il programma va in crash 
+richiede un rigore logico e matematico assoluto. Sono garanzie che solo la programmazione logica 
+(come Prolog) può offrire. Un LLM, per come è costruito, non può garantire questo livello 
+di precisione deterministica.
+
+\textbf{La sintesi:} Una volta che sappiamo con certezza scientifica \textit{cosa} 
+correggere, il problema diventa \textit{come} scriverlo in un codice Java pulito, che rispetti lo 
+stile del progetto e che faccia felici i test automatici. Qui gli LLM sono imbattibili: capiscono 
+il contesto e scrivono codice flessibile in modo eccellente.
+
+HybridRepair non chiede all'LLM di tirare a indovinare la causa del bug navigando alla cieca 
+nel codice. E non chiede al motore logico di mettersi a scrivere codice Java. Ognuno fa il suo mestiere.
+
+\section{L'Approccio Ibrido in Pratica: L'Esempio ``Closure-2''}
+
+Per capire meglio, guardiamo un caso reale: il bug \textbf{Closure-2} (un errore di tipo 
+\texttt{NullPointerException} o NPE) preso dal famoso database di test Defects4J, situato all'interno 
+del Google Closure Compiler.
+
+\subsection{Il problema}
+
+Nel codice originale, c'è un'interfaccia che punta a un oggetto che non esiste. Quando il programma 
+chiama il metodo \texttt{getImplicitPrototype()}, riceve in risposta  \texttt{null}. Alla riga 
+successiva, il programma cerca di estrarre le proprietà da questo \texttt{null} usando \texttt{getOwnPropertyNames()}. 
+Il risultato è che Il programma va in crash e la compilazione si blocca. I programmatori avevano persino lasciato 
+un commento dicendo \textit{``questo è un errore di annotazione, ma non dovrebbe far crashare tutto''}, 
+ma si erano dimenticati di inserire una protezione.
+
+\subsection{Come fallisce un'IA ``pura'' (VibeRepair)}
+
+Prendiamo VibeRepair \cite{zhu2026specification}, uno dei migliori sistemi APR su Defects4J basati solo su LLM del 2026. Prova a risolvere questo 
+bug leggendo il codice e capendo (correttamente) che il metodo non deve andare in crash. Quindi, 
+propone una via d'uscita rapida:
+
+\begin{lstlisting}[language=Java]
+if (implicitProto == null) {
+    t.makeError(n, "Bad type annotation...");
+    return; // <- L'IA decide di bloccare e uscire subito
+}
+\end{lstlisting}
+
+Sembra un'ottima soluzione: il crash sparisce e i test passano. Ma \textbf{è un errore concettuale}. 
+Facendo \texttt{return}, l'IA interrompe bruscamente il lavoro. Poche righe più in basso c'è un ciclo 
+\texttt{for-each} che dovrebbe analizzare altre interfacce valide, ma a causa di questa ``uscita anticipata'' 
+verranno tutte ignorate in silenzio.
+
+VibeRepair capisce che il programma deve sopravvivere, ma non si accorge del ciclo sottostante che ci 
+dice chiaramente quale sia la vera soluzione: \textbf{passare un insieme vuoto}, in modo che il ciclo faccia 
+``zero giri'' senza interrompere il resto del programma.
+
+\subsection{Come vince HybridRepair}
+
+Ecco come l' approccio ibrido risolve la situazione in tre passi:
+
+\begin{enumerate}
+    \item \textbf{Step 1 (LogicFL).} Il sistema logico fa girare i test falliti e 
+    ricostruisce in modo inequivocabile la catena del disastro:
+\begin{lstlisting}[language=Prolog]
+null_origin(implicitProto, line(1570), method('getImplicitPrototype')).
+npe_cause(implicitProto, line(1571), method('getOwnPropertyNames')).
+\end{lstlisting}
+    L'LLM non si sente dire ``Ehi, c'è un crash da qualche parte''. Riceve un rapporto precisissimo: 
+    \textit{``La variabile \texttt{implicitProto} nasce \texttt{null} alla riga 1570 e fa esplodere tutto alla riga 1571''}.
+    
+    \item \textbf{Step 2 (Estrazione AST).} \\
+    Il sistema isola chirurgicamente solo le $\sim$30 righe del metodo difettoso, scartando le altre 1700 
+    righe del file. Così facendo, l'LLM ha una visuale chiara e vede immediatamente il ciclo \texttt{for-each} incriminato.
+    
+    \item \textbf{Step 3  (Sintesi LLM).} \\
+    Ora l'LLM ha tutto: la causa esatta e il contesto pulito. Ragiona sul problema e capisce che l'obiettivo 
+    è non far crashare la riga 1571, ma permettere al ciclo successivo di continuare. La soluzione è 
+    inizializzare la variabile con una lista vuota (\texttt{HashSet}):
+\begin{lstlisting}[language=Java]
+// Rimossa la riga originale:
+% currentPropertyNames = implicitProto.getOwnPropertyNames();
+// Inserita la patch correttiva:
+if (implicitProto == null) {
+    currentPropertyNames = new HashSet<>();
+} else {
+    currentPropertyNames = implicitProto.getOwnPropertyNames();
+}
+\end{lstlisting}
+\end{enumerate}
+
+Questa patch fa esattamente la stessa cosa che hanno fatto gli ingegneri di Google nella realtà 
+(loro hanno usato \texttt{ImmutableSet.of()}, ma la logica è identica). I test passano e, soprattutto, 
+il comportamento del software rimane corretto.
+
+\subsection{Il Confronto}
+
+\begin{table}[h]
+\centering
+\caption{Confronto tra VibeRepair e HybridRepair}
+\vspace{2mm}
+\begin{tabular}{lll}
+\toprule
+\textbf{Caratteristica} & \textbf{VibeRepair (Solo IA)} & \textbf{HybridRepair (Logica + IA)} \\
+\midrule
+Ricerca del guasto & Ha bisogno di aiuti esterni & Completamente autonomo (LogicFL) \\
+Causa dell'errore & Tirata a indovinare dal codice & Dimostrata matematicamente (Prolog) \\
+Cosa vede l'IA & Un'idea vaga del problema & Rapporto esatto + solo il codice utile \\
+Codice generato & \texttt{return} anticipato (Sbagliato) & Protezione con \texttt{HashSet} vuoto (Corretto) \\
+Supera i Test? & Sì  & Sì  \\
+È davvero corretto? & No ($\times$) & Sì  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Questo esempio dimostra una cosa fondamentale: la differenza tra una patch che ``sembra giusta'' e 
+una che ``è giusta'' non dipende da quanto è intelligente l'IA, ma dalla \textbf{qualità delle informazioni} 
+che le diamo in pasto.
+
+\section{Come è costruito: I Tre Livelli}
+
+Tutto questo discorso si traduce in un'architettura software divisa in tre fasi, come una vera e
+ propria catena di montaggio:
+
+\begin{figure}[h]
+\centering
+\begin{tikzpicture}[
+    node distance=1.2cm,
+    block/.style={rectangle, draw, fill=gray!10, text width=4cm, align=center, rounded corners, minimum height=1.5cm, font=\small},
+    arrow/.style={thick,->,>=stealth}
+]
+\node (oracle) [block] {\textbf{1. FaultOracle}\\(L'Oracolo dei Guasti)\\Analisi puramente logica};
+\node (reason) [block, right=0.8cm of oracle] {\textbf{2. SpecReason}\\(Il Ragionatore)\\Ponte Logica-Codice};
+\node (agent) [block, right=0.8cm of reason] {\textbf{3. PatchAgent}\\(L'Agente Programmatore)\\Sintesi e Validazione};
+
+\draw [arrow] (oracle) -- (reason);
+\draw [arrow] (reason) -- (agent);
+\end{tikzpicture}
+\caption{Pipeline a tre livelli di HybridRepair.}
+\end{figure}
+
+\begin{enumerate}
+    \item \textbf{FaultOracle (L'Oracolo dei Guasti):} È la parte puramente logica (Prolog). Niente IA, 
+            niente probabilità. Trova la causa del bug in modo matematico e fornisce un referto inequivocabile.
+    \item \textbf{SpecReason (Il Ragionatore):} È il ponte tra la logica e il codice. Qui l'LLM entra in gioco 
+            ma \textit{non scrive ancora codice}. Viene obbligato a pensare ad alta voce (Chain-of-Thought) 
+            rispondendo a tre domande: \textit{Cosa c'è di sbagliato? Cosa vogliamo ottenere? Come lo risolviamo 
+            a livello di concetto?} Genera comprensione, non codice.
+    \item \textbf{PatchAgent (L'Agente Programmatore):} È la fase finale. L'LLM, partendo dai ragionamenti 
+            dello step precedente e avendo il contesto pulito, scrive finalmente la patch. La applica, prova 
+            a compilarla e, se qualcosa va storto, impara dall'errore e ci riprova senza fare due volte lo stesso sbaglio.
+\end{enumerate}
+
+Questa struttura a tre strati è il segreto di HybridRepair: l'IA non viene mai usata per investigare sulle 
+cause (dove farebbe danni), ma viene usata solo per tradurre in codice delle verità già dimostrate dalla logica.
