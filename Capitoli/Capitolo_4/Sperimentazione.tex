@@ -1,0 +1,110 @@
+
+
+\subsection{Obiettivi}
+
+L'obiettivo principale è quello misurare in modo rigoroso la capacità del sistema di 
+generare automaticamente patch plausibili e patch valide per bug di tipo NullPointerException (NPE) 
+reali, estratti dal benchmark Defects4J. Il secondo obiettivo è confrontare le prestazioni di HybridRepair 
+con quelle di VibeRepair, un sistema APR allo stato dell'arte basato esclusivamente su Large Language Models, 
+che a differenza di HybridRepair si affida alla Perfect Fault Localization, ovvero assume come noto a priori il 
+punto esatto del bug, anziché eseguire una localizzazione causale autonoma tramite analisi logica.
+
+
+
+
+\subsection{Research Questions}
+
+La sperimentazione è strutturata attorno a tre domande di ricerca:
+\begin{itemize}
+    \item \textbf{RQ1:} Quante patch plausibili è in grado di generare HybridRepair sui bug NPE del dataset Defects4J? 
+    \item \textbf{RQ2:} Quante delle patch plausibili generate da HybridRepair sono anche valide, ovvero semanticamente equivalenti o 
+    sostanzialmente equivalenti al Ground Truth? 
+    \item \textbf{RQ3:} Come si confrontano le prestazioni di HybridRepair rispetto a VibeRepair in termini di patch plausibili e 
+    valide generate sullo stesso dataset di bug NPE?
+
+\end{itemize}
+
+
+
+\subsection{Metriche}
+
+Al fine di rispondere alle domande di ricerca, sono state definite le seguenti metriche:
+
+\begin{itemize}
+    \item \textbf{Patch Rate Plausibili (PR):}  rapporto tra il numero di bug per cui il sistema produce almeno una patch 
+    che supera la suite di test e il numero totale di bug nel dataset. Corrisponde alla metrica standard adottata in 
+    letteratura per la valutazione dei sistemi APR.
+    \item \textbf{Patch Rate Valide (VR):} rapporto tra il numero di patch plausibili giudicate valide tramite revisione 
+    manuale e il numero totale di patch plausibili. Questa metrica quantifica la precision del sistema, ovvero la capacità 
+    di generare soluzioni semanticamente corrette tra quelle che superano la build.
+\end{itemize}
+
+La distinzione tra le due metriche è fondamentale nel contesto dell'Automated Program Repair. 
+Come evidenziato in letteratura, il fenomeno della test-suite blindness, ovvero la generazione di patch che passano i test 
+esistenti pur introducendo regressioni o soluzioni semanticamente errate, è una delle criticità principali dei sistemi APR. 
+Una patch plausibile può mascherare il bug senza risolverlo, violando contratti API non esplicitati nei test o introducendo comportamenti 
+non corretti su casi limite non coperti dalla suite. La metrica VR quantifica esattamente la capacità del sistema di andare oltre 
+la plausibilità superficiale.
+
+
+
+\subsection{Oggetti Sperimentali}
+
+\subsection{Oggetti Sperimentali}
+Il dataset sperimentale è composto da 37 bug di tipo NullPointerException estratti dal 
+benchmark Defects4J v2. La selezione è stata effettuata scegliendo bug NPE provenienti 
+da progetti Java open source di media e grande dimensione, mantenendo una copertura di 
+progetto diversificata.
+
+Il dataset copre 12 progetti distinti del benchmark Defects4J:
+
+\begin{itemize}
+    \item \textbf{JFreeChart (Chart):} libreria per la generazione di grafici e diagrammi 
+    in Java.\\
+    \texttt{Chart-2, Chart-4, Chart-14, Chart-16}
+    
+    \item \textbf{Apache Commons CLI (Cli):} libreria per la gestione di interfacce a riga 
+    di comando in Java.\\
+    \texttt{Cli-5, Cli-30}
+    
+    \item \textbf{Google Closure Compiler (Closure):} strumento per l'ottimizzazione e la 
+    compilazione di codice JavaScript.\\
+    \texttt{Closure-2, Closure-171}
+    
+    \item \textbf{Apache Commons Codec (Codec):} libreria per la codifica e decodifica di 
+    dati in vari formati, come Base64 e URL encoding.\\
+    \texttt{Codec-5, Codec-13, Codec-17}
+    
+    \item \textbf{Apache Commons CSV (Csv):} libreria per la lettura e scrittura di file CSV 
+    in Java.\\
+    \texttt{Csv-4, Csv-9, Csv-11}
+    
+    \item \textbf{Google Gson (Gson):} libreria per la serializzazione e deserializzazione di 
+    oggetti Java in formato JSON.\\
+    \texttt{Gson-6, Gson-9}
+    
+    \item \textbf{FasterXML Jackson Core (JacksonCore):} libreria per la manipolazione di 
+    dati JSON.\\
+    \texttt{JacksonCore-8}
+    
+    \item \textbf{FasterXML Jackson Databind (JacksonDatabind):} libreria per la 
+    serializzazione e deserializzazione di oggetti Java in formato JSON.\\
+    \texttt{JacksonDatabind-3, JacksonDatabind-13, JacksonDatabind-80, JacksonDatabind-93, 
+    JacksonDatabind-95, JacksonDatabind-107}
+    
+    \item \textbf{jsoup (Jsoup):} libreria per l'analisi e la manipolazione di documenti HTML 
+    in Java.\\
+    \texttt{Jsoup-8, Jsoup-22, Jsoup-26, Jsoup-66, Jsoup-89}
+    
+    \item \textbf{Apache Commons Lang (Lang):} libreria che fornisce utilità per la 
+    manipolazione di stringhe, numeri e oggetti in Java.\\
+    \texttt{Lang-20, Lang-33, Lang-39, Lang-47, Lang-57}
+    
+    \item \textbf{Apache Commons Math (Math):} libreria per la matematica e la statistica in 
+    Java.\\
+    \texttt{Math-4, Math-70, Math-79}
+    
+    \item \textbf{Mockito:} framework per il testing unitario in Java, utilizzato per creare 
+    oggetti mock e simulare comportamenti di dipendenze esterne durante i test.\\
+    \texttt{Mockito-18}
+\end{itemize}

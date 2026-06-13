@@ -1,17 +1,14 @@
 \documentclass[12pt,a4paper,oneside]{book} % o twoside se stampi fronte-retro
 
-% Richiamo il file con tutte le impostazioni e i pacchetti
 \input{Impostazioni/configurazione}
 
-% File della bibliografia
 \addbibresource{tesi.bib}
 
 \begin{document}
 
-% --- ELEMENTI PRELIMINARI ---
 \frontmatter
 \input{Frontespizio/frontespizio}
-\tableofcontents % Indice automatico
+\tableofcontents 
 
 % --- CORPO DELLA TESI ---
 \mainmatter
@@ -22,10 +19,13 @@
 \input{Capitoli/Capitolo_1/1.4_Defect4js.tex}
 \input{Capitoli/Capitolo_1/1.5_Strumenti.tex}
 \chapter{Architettura di HybridRepair}
-%\input{Capitoli/Capitolo_3/3.1_PanoramicaDelSistema}
-%\input{Capitoli/Capitolo_3/3.2_Fase1}
-%\input{Capitoli/Capitolo_3/3.3_Fase2}
-%\input{Capitoli/Capitolo_3/3.4_Fase3}
+\input{Capitoli/Capitolo_3/3.1_PanoramicaDelSistema}
+\input{Capitoli/Capitolo_3/3.2_Fase1}
+\input{Capitoli/Capitolo_3/3.3_Fase2}
+\input{Capitoli/Capitolo_3/3.4_Fase3}
+
+\chapter{Sperimentazione}
+\input{Capitoli/Capitolo_4/Sperimentazione}
 % --- CONCLUSIONI E BIBLIOGRAFIA ---
 \backmatter
 \printbibliography[title={Bibliografia}]
