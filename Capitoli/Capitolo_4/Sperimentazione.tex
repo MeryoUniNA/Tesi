@@ -50,7 +50,6 @@ la plausibilità superficiale.
 
 \subsection{Oggetti Sperimentali}
 
-\subsection{Oggetti Sperimentali}
 Il dataset sperimentale è composto da 37 bug di tipo NullPointerException estratti dal 
 benchmark Defects4J v2. La selezione è stata effettuata scegliendo bug NPE provenienti 
 da progetti Java open source di media e grande dimensione, mantenendo una copertura di 
@@ -89,8 +88,8 @@ Il dataset copre 12 progetti distinti del benchmark Defects4J:
     
     \item \textbf{FasterXML Jackson Databind (JacksonDatabind):} libreria per la 
     serializzazione e deserializzazione di oggetti Java in formato JSON.\\
-    \texttt{JacksonDatabind-3, JacksonDatabind-13, JacksonDatabind-80, JacksonDatabind-93, 
-    JacksonDatabind-95, JacksonDatabind-107}
+    \texttt{JacksonDatabind-3, JacksonDatabind-13, JacksonDatabind-80,}\\
+    \texttt{JacksonDatabind-93, JacksonDatabind-95, JacksonDatabind-107}
     
     \item \textbf{jsoup (Jsoup):} libreria per l'analisi e la manipolazione di documenti HTML 
     in Java.\\
@@ -108,3 +107,359 @@ Il dataset copre 12 progetti distinti del benchmark Defects4J:
     oggetti mock e simulare comportamenti di dipendenze esterne durante i test.\\
     \texttt{Mockito-18}
 \end{itemize}
+
+
+\subsection{Materiale Sperimentale}
+
+\subsubsection{HybridRepair}
+
+Il sistema HybridRepair presenta una pipeline composta da tre componenti principali, 
+descritti in dettaglio nel Capitolo dell'Architettura.
+
+Il primo componente è \textbf{LogicFL} \cite{kim2024identifying}, uno strumento di fault localization 
+basato su inferenza logica in Prolog, che identifica la causa radice di un NPE tracciando 
+la propagazione del valore \texttt{null} attraverso il codice sorgente. LogicFL è stato 
+eseguito nella versione disponibile nel replication package ufficiale degli autori, con 
+SWI-Prolog come motore di inferenza.
+
+Il secondo componente è il modulo di \textbf{prompt generativi} (SpecReason e PatchAgent), 
+che utilizza GPT-4o (\texttt{gpt-4o-2024-02-1}) come modello linguistico di base, 
+accessibile tramite Azure OpenAI API. La manipolazione strutturale del codice sorgente 
+è implementata tramite Tree-sitter. Ogni bug è stato eseguito con un budget massimo di 
+3 tentativi, con un massimo di 15 round di tool-use per tentativo.
+
+Il terzo componente è il \textbf{valutatore automatico di plausibilità}, che verifica 
+la correttezza sintattica delle patch generate eseguendo la suite di test 
+JUnit ufficiale di ciascun progetto.
+
+\subsubsection{VibeRepair}
+
+VibeRepair~\cite{zhu2026specification} è un sistema APR basato esclusivamente su Large Language 
+Models che adotta un approccio \emph{specification-centric}: anziché modificare 
+direttamente il codice sorgente, traduce il codice difettoso in una specifica 
+comportamentale, corregge la specifica, e genera la patch a partire dalla specifica 
+corretta. A differenza di HybridRepair, VibeRepair non esegue una localizzazione del 
+fault autonoma, bensì opera sotto l'assunzione di \emph{Perfect Fault Localization} 
+(PFL), ovvero assume come noto a priori il punto esatto del bug. Per la valutazione 
+su Defects4J, VibeRepair utilizza GPT-4o (\texttt{gpt-4o-2024-05-13}) come modello 
+di base, con temperatura pari a 1 e un budget massimo di $5 \times 3 = 15$ patch 
+candidate per bug.
+
+I dati di VibeRepair utilizzati per il confronto nella RQ3 sono quelli pubblicati 
+nel paper originale \cite{zhu2026specification} per Defects4J v2.0. Il confronto è quindi di 
+tipo archivio contro archivio: per ciascuno dei 37 bug del dataset, è stato verificato 
+se VibeRepair disponeva di una patch plausibile per lo stesso identificatore di bug. 
+Si noti che VibeRepair è stato valutato su un insieme più ampio di bug (438 bug totali 
+in Defects4J v2.0): il confronto è quindi ristretto al sottoinsieme dei 37 bug del 
+presente dataset.
+
+\subsubsection{Dataset}
+
+I bug NPE utilizzati nella sperimentazione sono stati estratti da Defects4J v2.0.1 \cite{just2014defects4j}. Il dataset è stato 
+ottenuto tramite il replication package di LogicFL, che include uno snapshot preconfigurato dei bug NPE selezionati dagli autori, 
+comprensivo delle versioni difettose dei progetti e delle suite di test JUnit necessarie per la riproduzione degli errori. Ogni bug 
+è stato eseguito nella versione difettosa del progetto, con la suite di test JUnit ufficiale come oracolo di validazione per la 
+plausibilità delle patch.
+
+
+
+
+\subsection{Procedura Sperimentale}
+
+\subsubsection{Esecuzione della pipeline HybridRepair}
+
+Per ciascun bug del dataset, la pipeline è stata eseguita in modalità fully-automated: dato 
+l'identificatore del bug (ad esempio Chart-4), il sistema ha orchestrato in sequenza le tre fasi 
+(FaultOracle, SpecReason, PatchAgent) producendo in output un oggetto RepairResult. 
+I risultati sono stati classificati come: PASS se almeno uno dei tre tentativi ha prodotto una patch 
+che supera la suite di test completa; FAIL se nessun tentativo ha superato la build.
+
+\subsubsection{Protocollo validazione manuale}
+
+La determinazione della validità di una patch (RQ2) ha richiesto una revisione manuale 
+di ciascuna delle 22 patch plausibili. La procedura adottata è la seguente:
+
+\begin{itemize}
+    \item Confronto della patch generata con il Ground Truth ufficiale di Defects4J riga per riga.
+    \item Verifica dell'equivalenza semantica, ovvero se la patch risolve la stessa causa radice del
+    Ground Truth e produce lo stesso comportamento osservabile su tutti gli input, compresi i casi limite non
+    coperti dai test.
+    \item Verifica dell'assenza di regressioni silenti, ovvero modifiche al comportamento del programma su
+    scenari non coperti dalla suite di test.
+\end{itemize}
+
+Una patch è stata classificata come valida se soddisfa almeno uno dei seguenti criteri:
+
+\begin{itemize}
+    \item \textbf{Equivalenza} quasi letterale con il \textbf{Ground Truth}, con differenze limitate a variazioni
+    stilistiche non semantiche.
+    \item Differenza funzionale con strategia di fix diversa, purché il comportamento sia identico su tutti i domini di input realistici.
+\end{itemize}
+
+Una patch è stata classificata come plausibile/non valida se:
+
+\begin{itemize}
+
+    \item il validatore semantico automatico della pipeline ha restituito \begin{verbatim}
+        semantic_valid: false
+    \end{verbatim} oppure
+    \item la revisione manuale ha rivelato una copertura parziale del difetto, l'omissione di una parte del fix del Ground Truth non coperta 
+    dai test, o l'introduzione di regressioni silenti.
+\end{itemize}
+
+\subsubsection{Estrazione patches VibeRepair}
+
+Per la RQ3, le patch corrette di VibeRepair sono state estratte dai dati pubblici del paper originale, specificamente dai file delle patch 
+semanticamente equivalenti al Ground Truth. Per ciascuno dei 37 bug del dataset, è stato verificato se VibeRepair disponeva di una patch 
+corretta per lo stesso identificatore di bug. Il confronto è quindi di tipo archivio-contro-archivio sulla metrica delle patch corrette/valide, 
+non una riesecuzione diretta sullo stesso ambiente.
+
+\subsection{Risultati}
+
+La Tabella riporta i risultati per ciascun bug del dataset.
+Le colonne indicano: \textbf{HR Plaus.} = patch plausibile generata da HybridRepair;
+\textbf{HR Valida} = patch valida (semanticamente equivalente al Ground Truth);
+\textbf{VR Corretta} = patch corretta disponibile per VibeRepair secondo i dati
+pubblicati nel paper originale~\cite{zhu2026specification}.
+Il simbolo \checkmark{} indica esito positivo, $\times$ esito negativo,
+$-$ indica che la patch non è plausibile (la validità non è applicabile).
+
+\begin{table}[ht]
+\centering
+\caption{Risultati di HybridRepair (HR) e VibeRepair (VR) per i 37 bug del dataset.}
+\label{tab:risultati}
+\small
+\begin{tabular}{llccc}
+\toprule
+\textbf{Bug ID} & \textbf{Progetto} & \textbf{HR Plaus.} & \textbf{HR Valida} & \textbf{VR Corretta} \\
+\midrule
+Chart-2    & JFreeChart        & $\times$ & $-$          & $\times$ \\
+Chart-4    & JFreeChart        & \checkmark & \checkmark & $\times$ \\
+Chart-14   & JFreeChart        & \checkmark & \checkmark & $\times$ \\
+Chart-16   & JFreeChart        & \checkmark & $\times$   & $\times$ \\
+Cli-5      & Commons CLI       & \checkmark & \checkmark & \checkmark \\
+Cli-30     & Commons CLI       & $\times$ & $-$          & \checkmark \\
+Closure-2  & Closure Compiler  & \checkmark & $\times$   & $\times$ \\
+Closure-171 & Closure Compiler & $\times$ & $-$          & $\times$ \\
+Codec-5    & Commons Codec     & $\times$ & $-$          & \checkmark \\
+Codec-13   & Commons Codec     & \checkmark & \checkmark & $\times$ \\
+Codec-17   & Commons Codec     & \checkmark & \checkmark & $\times$ \\
+Csv-4      & Commons CSV       & \checkmark & \checkmark & \checkmark \\
+Csv-9      & Commons CSV       & \checkmark & $\times$   & \checkmark \\
+Csv-11     & Commons CSV       & \checkmark & $\times$   & \checkmark \\
+Gson-6     & Gson              & \checkmark & \checkmark & \checkmark \\
+Gson-9     & Gson              & $\times$ & $-$          & $\times$ \\
+JacksonCore-8      & Jackson-core     & \checkmark & $\times$   & \checkmark \\
+JacksonDatabind-3  & Jackson-databind & \checkmark & $\times$   & \checkmark \\
+JacksonDatabind-13 & Jackson-databind & \checkmark & $\times$   & $\times$ \\
+JacksonDatabind-80 & Jackson-databind & \checkmark & \checkmark & \checkmark \\
+JacksonDatabind-93 & Jackson-databind & \checkmark & \checkmark & \checkmark \\
+JacksonDatabind-95 & Jackson-databind & \checkmark & \checkmark & \checkmark \\
+JacksonDatabind-107 & Jackson-databind & $\times$ & $-$         & $\times$ \\
+Jsoup-8    & jsoup             & \checkmark & \checkmark & $\times$ \\
+Jsoup-22   & jsoup             & $\times$ & $-$          & $\times$ \\
+Jsoup-26   & jsoup             & \checkmark & \checkmark & \checkmark \\
+Jsoup-66   & jsoup             & $\times$ & $-$          & $\times$ \\
+Jsoup-89   & jsoup             & \checkmark & $\times$   & \checkmark \\
+Lang-20    & Commons Lang      & \checkmark & \checkmark & $\times$ \\
+Lang-33    & Commons Lang      & $\times$ & $-$          & $\times$ \\
+Lang-39    & Commons Lang      & \checkmark & \checkmark & $\times$ \\
+Lang-47    & Commons Lang      & $\times$ & $-$          & $\times$ \\
+Lang-57    & Commons Lang      & $\times$ & $-$          & $\times$ \\
+Math-4     & Commons Math      & $\times$ & $-$          & $\times$ \\
+Math-70    & Commons Math      & $\times$ & $-$          & $\times$ \\
+Math-79    & Commons Math      & $\times$ & $-$          & $\times$ \\
+Mockito-18 & Mockito           & $\times$ & $-$          & $\times$ \\
+\midrule
+\textbf{Totale} & & \textbf{22/37 (59,5\%)} & \textbf{14/22 (63,6\%)} & \textbf{14/37 (37,8\%)} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ─────────────────────────────────────────────
+\subsection{RQ1 --- Patch plausibili}
+
+HybridRepair genera patch plausibili per \textbf{22 bug su 37 (59,5\%)}.
+Il sistema ha fallito su 15 bug. I fallimenti si concentrano prevalentemente su progetti
+con strutture di propagazione del valore \texttt{null} molto complesse o su bug con
+dipendenze inter-procedurali profonde non completamente risolte da LogicFL
+(Closure-171, JacksonDatabind-107, i bug di Commons Math e Mockito).
+
+\begin{quote}
+\textbf{Risposta a RQ1:} HybridRepair genera patch plausibili per il 59,5\% dei bug
+NPE testati (22/37). Il numero di patch plausibili di VibeRepair sui 37 bug del dataset
+non è direttamente ricavabile dai dati pubblicati.
+\end{quote}
+
+% ─────────────────────────────────────────────
+\subsection{RQ2 --- Patch valide}
+
+Delle 22 patch plausibili, \textbf{14 sono state giudicate valide (63,6\% di precision)},
+ovvero semanticamente equivalenti o sostanzialmente equivalenti al Ground Truth.
+
+\begin{quote}
+\textbf{Risposta a RQ2:} Il 63,6\% delle patch plausibili di HybridRepair è
+semanticamente valido (14/22), corrispondente al 37,8\% del dataset complessivo (14/37).
+\end{quote}
+
+% ─────────────────────────────────────────────
+\subsection{RQ3 --- Confronto con VibeRepair}
+
+Il confronto con VibeRepair è effettuato sulla metrica delle \textbf{patch corrette/valide},
+che rappresenta l'unica base di confronto omogenea disponibile: i dati pubblicati da
+VibeRepair~\cite{zhu2026specification} riportano patch corrette (semanticamente equivalenti al
+Ground Truth tramite ispezione manuale), non patch meramente plausibili.
+La tabella riporta la distribuzione dei bug in base all'esito combinato
+dei due sistemi su questa metrica.
+
+\begin{table}[ht]
+\centering
+\caption{Analisi comparativa patch valide/corrette: HybridRepair vs VibeRepair.}
+\label{tab:rq3}
+\small
+\begin{tabular}{lcp{7cm}}
+\toprule
+\textbf{Scenario} & \textbf{N. bug} & \textbf{Bug} \\
+\midrule
+Solo HybridRepair produce patch valida
+  & 7
+  & Chart-4, Chart-14, Codec-13, Codec-17, Jsoup-8, Lang-20, Lang-39 \\
+Solo VibeRepair produce patch corretta
+  & 7
+  & Cli-30, Codec-5, Csv-9, Csv-11, JacksonCore-8, JacksonDatabind-3, Jsoup-89 \\
+Entrambi producono patch valida/corretta
+  & 7
+  & Cli-5, Csv-4, Gson-6, JacksonDatabind-80, JacksonDatabind-93,
+    JacksonDatabind-95, Jsoup-26 \\
+Nessuno dei due
+  & 16
+  & Chart-2, Chart-16, Closure-2, Closure-171, Gson-9, JacksonDatabind-13,
+    JacksonDatabind-107, Jsoup-22, Jsoup-66, Lang-33, Lang-47, Lang-57,
+    Math-4, Math-70, Math-79, Mockito-18 \\
+\midrule
+\textbf{Totale} & \textbf{37} & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+I due sistemi producono lo stesso numero assoluto di patch valide/corrette sui 37 bug:
+\textbf{14/37 (37,8\%)} ciascuno. Tuttavia, il confronto nasconde una differenza
+fondamentale nelle condizioni operative: VibeRepair opera sotto l'assunzione di
+\emph{Perfect Fault Localization} (PFL), ovvero riceve come input la posizione esatta
+del bug, mentre HybridRepair esegue la localizzazione del fault in modo autonomo tramite
+LogicFL, senza alcuna informazione a priori sulla posizione del difetto.
+Raggiungere la stessa precision in condizioni realistiche, senza PFL, rappresenta quindi
+il risultato principale di questo confronto.
+
+Analizzando i bug risolti esclusivamente da ciascun sistema, emergono due pattern
+distinti. HybridRepair eccelle su bug multi-punto con propagazione NPE cross-method
+(Chart-4, Chart-14, Codec-13, Codec-17, Lang-39), dove la catena causale di LogicFL
+guida il modello verso tutti i punti di intervento necessari.
+VibeRepair produce invece patch corrette su bug dove la specifica comportamental è più
+facilmente inferibile dai test fallenti (Csv-9, Csv-11, JacksonCore-8, Jsoup-89),
+ma che nel caso di HybridRepair risultano tra i casi di \emph{test-suite blindness}, ovvero la patch generata supera i test ma diverge dal Ground Truth su aspetti non testati, e che per questa motivazione sono state scartate.
+
+\begin{quote}
+\textbf{Risposta a RQ3:} HybridRepair produce patch valide per 14/37 bug (37,8\%),
+lo stesso numero di patch corrette prodotto da VibeRepair sullo stesso dataset.
+Il risultato è notevole in quanto HybridRepair opera senza Perfect Fault Localization,
+a differenza di VibeRepair che assume nota a priori la posizione del bug.
+I due sistemi sono complementari: HybridRepair risolve 7 bug che VibeRepair non corregge,
+e viceversa, con una sovrapposizione di 7 bug risolti da entrambi.
+\end{quote}
+
+
+\subsection{Discussione}
+
+Le 8 patch plausibili-non-valide di HybridRepair si distribuiscono in due sottocategorie: 2 casi
+intercettati automaticamente dal validatore semantico della pipeline
+(Csv-9, Csv-11, con \texttt{semantic\_valid: false}), e 6 casi di \emph{test-suite
+blindness} rilevati solo dalla revisione manuale
+(Chart-16, Closure-2, JacksonCore-8, JacksonDatabind-3, JacksonDatabind-13, Jsoup-89).
+
+Le 14 patch valide presentano pattern caratteristici: fix minimali e chirurgici identici
+al Ground Truth a meno di variazioni stilistiche
+(Chart-4, Chart-14, Lang-39, JacksonDatabind-80, JacksonDatabind-95, Csv-4),
+ed equivalenze funzionali con stile di codifica diverso ma comportamento identico
+(Jsoup-8, Gson-6, Lang-20, Codec-13, Codec-17).
+Questo risultato dimostra che la guida semantica di LogicFL, combinata con il paradigma
+Chain-of-Thought di SpecReason, orienta il modello generativo verso la causa radice del
+bug anziché verso patch superficiali.
+
+
+\subsection{Casi di successo rappresentativi}
+
+\textbf{Chart-14} rappresenta un caso emblematico dell'efficacia dell'approccio ibrido
+su bug multi-punto. Il fix richiede l'aggiunta della stessa guard clause
+\texttt{if (markers == null) \{ return false; \}} in quattro metodi gemelli distribuiti
+su due classi (\texttt{CategoryPlot} e \texttt{XYPlot}, per dominio e range).
+HybridRepair identifica correttamente tutti e quattro i punti di intervento, mentre
+VibeRepair non produce patch corretta per questo bug.
+La guida di LogicFL, che traccia la propagazione del valore \texttt{null} attraverso
+i quattro percorsi di esecuzione, risulta determinante.
+
+\textbf{Lang-39} illustra la capacità del sistema di gestire bug con origini di nullità
+in parametri di array. La patch generata introduce la stessa guard clause
+
+\begin{center}
+\texttt{if (searchList[i] == null || replacementList[i] == null) continue;}
+\end{center}
+
+\noindent del Ground Truth, con i soli operandi dell'operatore \texttt{||} invertiti
+--- una variazione stilistica semanticamente irrilevante.
+
+\textbf{Csv-4} evidenzia il funzionamento del meccanismo di retry adattivo.
+Il primo tentativo produceva una patch semanticamente errata: restituiva una mappa
+vuota invece di \texttt{null} in alcuni casi, causando il fallimento di 1 test su 48.
+Il secondo tentativo, con temperatura leggermente aumentata, ha generato la soluzione
+corretta:
+
+\begin{center}
+\texttt{return this.headerMap == null ? null : new LinkedHashMap<>(this.headerMap);}
+\end{center}
+
+\noindent quasi identica al Ground Truth, con la sola differenza stilistica del
+diamond operator.
+
+% ─────────────────────────────────────────────
+\subsection{Casi problematici e \emph{test-suite blindness}}
+
+\textbf{Csv-9 e Csv-11} rappresentano i due casi intercettati dal validatore semantico
+automatico con \texttt{semantic\_valid: false}.
+In Csv-9, il modello è intervenuto nel metodo sbagliato
+(\texttt{CSVParser.initializeHeader()} invece di \texttt{CSVRecord.putIn()}),
+violando il contratto documentato nel Javadoc
+(\texttt{@return null if the format has no header}).
+In Csv-11, l'introduzione di un \texttt{continue} scartava silenziosamente le colonne
+con header \texttt{null}, disallineando gli indici e la mappa nome$\rightarrow$indice
+--- una modifica del contratto API non rilevata dai 57 test esistenti.
+Questi casi confermano l'utilità del validatore semantico automatico come filtro
+preventivo rispetto alla sola esecuzione della test suite.
+
+\textbf{Closure-2} è il caso di studio presentato nel Capitolo~2 come esempio
+introduttivo dell'approccio ibrido. Nonostante 1151/1151 test superati, la patch
+presenta una divergenza di edge-case: l'early return introdotto sopprime anche il
+controllo ricorsivo delle interfacce estese (\texttt{getCtorExtendedInterfaces()}),
+un comportamento più aggressivo del Ground Truth non coperto dalla suite.
+
+\textbf{Chart-16} illustra un caso di over-editing. Il fix del costruttore è identico
+al Ground Truth, ma nel metodo \texttt{setCategoryKeys} il modello rimuove un controllo
+di validazione della lunghezza e la chiamata \texttt{fireDatasetChanged()}, introducendo
+una regressione comportamentale non rilevata dai 20/20 test.
+Questo evidenzia come il vincolo di minimalità nel prompt debba essere bilanciato con
+una comprensione più profonda degli invarianti del codice: non è sufficiente minimizzare
+le righe modificate se non si preservano le chiamate con effetti collaterali attesi.
+
+% ─────────────────────────────────────────────
+\subsection{Confronto evolutivo con la versione precedente}
+
+Il confronto con i risultati di una versione precedente del sistema
+(HybridRepair v1, valutato su 17 bug) mostra un netto miglioramento qualitativo:
+da 5/17 patch valide (29,4\%) a 14/22 (63,6\%).
+Il miglioramento è attribuibile principalmente a tre fattori:
+la maggiore copertura delle API statiche nell'Ingredient Forge,
+il vincolo di minimalità più stringente nel prompt del PatchAgent,
+e il meccanismo di retry adattivo con temperatura incrementale,
+che consente al sistema di esplorare soluzioni alternative quando il primo tentativo
+fallisce la validazione semantica --- come dimostrato dal caso Csv-4.
+
