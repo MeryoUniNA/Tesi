@@ -2,7 +2,7 @@
 \section{Obiettivi}
 
 L'obiettivo principale è quello misurare in modo rigoroso la capacità del sistema di 
-generare automaticamente patch plausibili e patch valide per bug di tipo NullPointerException (NPE) 
+generare automaticamente patch plausibili e patch valide per bug di tipo NullPointerException 
 reali, estratti dal benchmark Defects4J. Il secondo obiettivo è confrontare le prestazioni di HybridRepair 
 con quelle di VibeRepair, un sistema APR allo stato dell'arte basato esclusivamente su Large Language Models, 
 che a differenza di HybridRepair si affida alla Perfect Fault Localization, ovvero assume come noto a priori il 
@@ -26,6 +26,7 @@ La sperimentazione è strutturata attorno a tre domande di ricerca:
 
 
 \section{Metriche}
+\label{sec:metriche}
 
 Al fine di rispondere alle domande di ricerca, sono state definite le seguenti metriche:
 
@@ -40,6 +41,9 @@ Al fine di rispondere alle domande di ricerca, sono state definite le seguenti m
     dataset. A differenza di HR Valida, il denominatore è l'intero dataset e non le sole patch plausibili; questa metrica
     viene utilizzata come base omogenea di confronto con VibeRepair, per cui non sono disponibili dati sul numero di
     patch plausibili generate.
+    \item \textbf{Tasso di patch valide assoluto VibeRepair (VR Val. Ass.):} rapporto tra il numero di patch corrette di VibeRepair
+    e il numero totale di bug nel dataset. È la metrica analoga a HR Val. Ass. applicata a VibeRepair; i valori sono estratti
+    dai dati pubblicati nel paper originale~\cite{zhu2026specification} e rappresentano la base omogenea di confronto con HybridRepair.
 \end{itemize}
 
 La distinzione tra le prime due metriche è fondamentale nel contesto dell'Automated Program Repair.
@@ -189,15 +193,16 @@ che supera la suite di test completa; FAIL se nessun tentativo ha superato la bu
 \subsection{Protocollo validazione manuale}
 
 La determinazione della validità di una patch ha richiesto una revisione manuale
-per ciascuna delle 22 patch plausibili. La procedura adottata è stata la seguente:
+per ciascuna delle 22 patch plausibili, condotta con il supporto di strumenti di analisi
+automatica del codice per l'ispezione statica dei diff. La procedura adottata è stata la seguente:
 
 \begin{itemize}
     \item \textbf{Confronto della patch generata con il Ground Truth} ufficiale di Defects4J riga per riga.
     \item \textbf{Verifica dell'equivalenza semantica}, ovvero se la patch risolve la stessa causa radice del
-    Ground Truth e produce lo stesso comportamento osservabile su tutti gli input, compresi i casi limite non
-    coperti dai test.
-    \item \textbf{Verifica dell'assenza di regressioni silenti}, ovvero modifiche al comportamento del programma su
-    scenari non coperti dalla suite di test.
+    Ground Truth e produce lo stesso comportamento osservabile su tutti gli input, compresi i casi limite.
+    \item \textbf{Verifica dell'assenza di regressioni silenti}, tramite ispezione statica del diff e
+    ragionamento sui code path interessati dalla modifica, per identificare eventuali divergenze
+    di comportamento su scenari non coperti dalla suite di test.
     \item Nei casi \textit{borderline}, in cui la divergenza dal Ground Truth D4J non fosse
     attribuibile con certezza a una lacuna di HybridRepair, confronto con le patch
     di riferimento pubblicate da VibeRepair, come calibrazione indipendente del giudizio.
@@ -208,18 +213,21 @@ Una patch è stata classificata come valida se soddisfa almeno uno dei seguenti 
 \begin{itemize}
     \item \textbf{Equivalenza} quasi letterale con il \textbf{Ground Truth}, con differenze limitate a variazioni
     stilistiche non semantiche.
-    \item \textbf{Differenza funzionale} con strategia di fix diversa, purché il comportamento sia identico su tutti i domini di input realistici.
-    \item \textbf{Convergenza} con la patch di VibeRepair su tutti i metodi rilevanti, nei casi in cui
-    la divergenza dal Ground Truth D4J risulti una scelta indipendentemente condivisa da
-    entrambi i sistemi e non penalizzata da alcun test della suite.
+    \item \textbf{Differenza funzionale} con strategia di fix diversa, purché il comportamento risulti
+    semanticamente equivalente alla GT su tutti i casi d'uso pertinenti al bug.
+    \item \textbf{Convergenza} con la patch di VibeRepair su tutti i metodi rilevanti: in accordo con la prassi
+    consolidata nella ricerca APR, una patch giudicata valida in un sistema peer-reviewed pubblicato costituisce
+    un oracolo indipendente. Se HybridRepair produce la medesima soluzione, questa è considerata valida
+    per transitività, nei casi in cui la divergenza dal Ground Truth D4J non sia penalizzata da alcun test della suite.
 \end{itemize}
 
 Una patch è stata classificata come plausibile/non valida se:
 
 \begin{itemize}
     \item il validatore semantico automatico della pipeline ha restituito \verb|semantic_valid:| \\\verb|false|.
-    \item la revisione manuale ha rivelato una copertura parziale del difetto, l'omissione di una parte del fix del Ground Truth non coperta
-    dai test, o l'introduzione di regressioni silenti.
+    \item la revisione manuale ha rivelato una copertura parziale del difetto, l'omissione di una parte del fix
+    ritenuta necessaria per la correttezza del comportamento del programma anche se non coperta da test espliciti,
+    o l'introduzione di regressioni silenti.
 \end{itemize}
 
 \subsection{Estrazione patches VibeRepair}
@@ -232,14 +240,9 @@ non una riesecuzione diretta sullo stesso ambiente.
 \newpage
 \section{Risultati}
 
-La Tabella riporta i risultati per ciascun bug del dataset.
-Le prime tre colonne dati riguardano \textbf{HybridRepair}: \textbf{HR Plaus.} indica
-se è stata generata almeno una patch che supera la suite di test; \textbf{HR Valida} indica
-se tale patch è stata giudicata valida dalla revisione manuale (precision su patch plausibili);
-\textbf{HR Val. Ass.} indica la validità sul totale del dataset (patch valide / 37 bug),
-usata come base omogenea di confronto con VibeRepair.
-La quarta colonna riguarda \textbf{VibeRepair}: \textbf{VR Corretta} indica se è disponibile
-una patch corretta nei dati pubblicati nel paper originale\cite{zhu2026specification}.
+La Tabella riporta i risultati per ciascun bug del dataset secondo le metriche definite
+nella Sezione~\ref{sec:metriche}: \textbf{HR Plaus.}, \textbf{HR Valida} e \textbf{HR Val. Ass.}
+per HybridRepair; \textbf{VR Val. Ass.} per VibeRepair\cite{zhu2026specification}.
 Il simbolo \checkmark{} indica esito positivo, $\times$ esito negativo,
 $-$ indica che la patch non è plausibile (la validità non è applicabile).
 
@@ -251,7 +254,7 @@ $-$ indica che la patch non è plausibile (la validità non è applicabile).
 \toprule
  & \multicolumn{3}{c}{\textbf{HybridRepair}} & \textbf{VibeRepair} \\
 \cmidrule(lr){2-4}
-\textbf{Bug ID} & \textbf{HR Plaus.} & \textbf{HR Valida} & \textbf{HR Val. Ass.} & \textbf{VR Corretta} \\
+\textbf{Bug ID} & \textbf{HR Plaus.} & \textbf{HR Valida} & \textbf{HR Val. Ass.} & \textbf{VR Val. Ass.} \\
 \midrule
 Chart-2    & $\times$ & $-$          & $\times$ & $\times$ \\
 Chart-4    & \checkmark & \checkmark & \checkmark & $\times$ \\
@@ -367,8 +370,7 @@ Nessuno dei due
 HybridRepair produce \textbf{15/37 patch valide (40,5\%)}, contro le \textbf{14/37 (37,8\%)}
 di VibeRepair sullo stesso dataset. Tuttavia, il confronto nasconde una differenza
 fondamentale nelle condizioni operative: VibeRepair, come abbiamo accennato precedentemente,
-opera sotto l'assunzione di \emph{Perfect Fault Localization}, ovvero riceve come input
-la posizione esatta del bug, mentre HybridRepair esegue la localizzazione del fault in
+opera sotto l'assunzione di \emph{Perfect Fault Localization}, mentre HybridRepair esegue la localizzazione del fault in
 modo autonomo tramite LogicFL, senza alcuna informazione a priori sulla posizione del
 difetto. Superare VibeRepair in termini di patch corrette, operando in condizioni
 realistiche senza PFL, rappresenta il risultato principale di questo confronto.
@@ -376,8 +378,8 @@ realistiche senza PFL, rappresenta il risultato principale di questo confronto.
 \begin{quote}
 \textbf{Risposta a RQ3:} HybridRepair produce patch valide per 15/37 bug (40,5\%),
 superando le 14/37 di VibeRepair sullo stesso dataset (37,8\%).
-Il risultato è notevole in quanto HybridRepair opera senza Perfect Fault Localization,
-a differenza di VibeRepair che assume nota a priori la posizione del bug.
+Il risultato è notevole in quanto HybridRepair opera senza Perfect Fault Localization
+a differenza di VibeRepair.
 I due sistemi sono complementari: HybridRepair risolve 7 bug che VibeRepair non corregge,
 VibeRepair ne risolve 6 che HybridRepair non corregge, con una sovrapposizione di 8 bug
 risolti da entrambi.
@@ -400,114 +402,74 @@ distinti. HybridRepair eccelle su bug multi-punto con propagazione NPE cross-met
 (Chart-4, Chart-14, Codec-13, Codec-17, Lang-39), dove la catena causale di LogicFL
 guida il modello verso tutti i punti di intervento necessari.
 VibeRepair produce invece patch corrette su bug dove la specifica comportamentale è più
-facilmente inferibile dai test fallenti (Csv-9, Csv-11, JacksonCore-8, Jsoup-89),
-ma che nel caso di HybridRepair risultano tra i casi di \emph{test-suite blindness},
- ovvero la patch generata supera i test ma diverge dal Ground Truth su aspetti non testati,
- e che per questa motivazione sono state scartate.
+facilmente inferibile dai test fallenti (Csv-9, Csv-11, JacksonCore-8, Jsoup-89).
+Su questi stessi bug, HybridRepair genera patch plausibili che superano i test ma presentano
+una copertura parziale del difetto o introducono comportamento scorretto su aspetti non testati
+dalla suite, un caso tipico di \emph{test-suite blindness}, e sono state quindi classificate come non valide.
 
 \subsection{Casi di successo rappresentativi}
 
 \textbf{Chart-14} rappresenta un caso emblematico dell'efficacia dell'approccio ibrido
-su bug multi-punto. Il fix richiede l'aggiunta della stessa guard clause
-\texttt{if (markers == null) \{ return false; \}} in quattro metodi gemelli distribuiti
-su due classi (\texttt{CategoryPlot} e \texttt{XYPlot}, per dominio e range).
-HybridRepair identifica correttamente tutti e quattro i punti di intervento, mentre
-VibeRepair non produce patch corretta per questo bug.
-La guida di LogicFL, che traccia la propagazione del valore \texttt{null} attraverso
-i quattro percorsi di esecuzione, risulta determinante.
+su bug multi-punto. Il fix richiede l'inserimento della stessa guard clause in quattro
+metodi gemelli distribuiti su due classi distinte, per dominio e range.
+HybridRepair identifica correttamente tutti e quattro i punti di intervento grazie
+alla catena causale prodotta da LogicFL, che traccia la propagazione del valore null
+attraverso i quattro percorsi di esecuzione. VibeRepair, pur operando con Perfect
+Fault Localization, non produce patch corretta per questo bug.
 
 \textbf{Lang-39} illustra la capacità del sistema di gestire bug con origini di nullità
-in parametri di array. La patch generata introduce la stessa guard clause
+in parametri di array. La patch generata introduce una guard clause per saltare le
+coppie di elementi null nei due array di input, semanticamente identica al Ground
+Truth; l'unica differenza è l'ordine dei due operandi della condizione, una variazione
+stilistica priva di effetti semantici.
 
-\begin{center}
-\texttt{if (searchList[i] == null || replacementList[i] == null) continue;}
-\end{center}
+\textbf{Csv-4} evidenzia il funzionamento del meccanismo di retry adattivo. Il primo
+tentativo produceva una patch semanticamente errata: restituiva una struttura dati
+vuota invece di null in alcuni casi, causando il fallimento di un test su 48. Il
+secondo tentativo, con temperatura leggermente aumentata, ha generato la soluzione
+corretta, quasi identica al Ground Truth, con la sola differenza nell'uso di una
+sintassi Java più moderna ma semanticamente equivalente.
 
-\noindent del Ground Truth, con i soli operandi dell'operatore \texttt{||} invertiti
---- una variazione stilistica semanticamente irrilevante.
-
-\textbf{Csv-4} evidenzia il funzionamento del meccanismo di retry adattivo.
-Il primo tentativo produceva una patch semanticamente errata: restituiva una mappa
-vuota invece di \texttt{null} in alcuni casi, causando il fallimento di 1 test su 48.
-Il secondo tentativo, con temperatura leggermente aumentata, ha generato la soluzione
-corretta:
-
-\begin{center}
-\texttt{return this.headerMap == null ? null : new LinkedHashMap<>(this.headerMap);}
-\end{center}
-
-\noindent quasi identica al Ground Truth, con la sola differenza stilistica del
-diamond operator.
-
-\textbf{JacksonDatabind-3} illustra il valore del confronto con patch di riferimento
-indipendenti (VibeRepair).
-Il bug si manifesta nel metodo principale \texttt{deserialize} di
-\texttt{StringArrayDeserializer}: nel ramo \texttt{VALUE\_NULL}, il codice originale
-invocava \texttt{\_elementDeserializer.getNullValue()} su un riferimento che può essere
-\texttt{null}, causando il NPE. HybridRepair introduce:
-
-\begin{center}
-\texttt{value = (\_elementDeserializer != null) ? \_elementDeserializer.getNullValue() : null;}
-\end{center}
-
-\noindent che, data la guardia \texttt{if (\_elementDeserializer == null)} presente
-a monte nel metodo, si riduce sempre a \texttt{value = null} --- identico al Ground
-Truth D4J (\texttt{value = null;}) e a VibeRepair (\texttt{value = null;}):
-tripla convergenza sul metodo decisivo.
-
-Nonostante ciò inizialmente la patch era stata classificata come caso di  test-suite blindness per una lacuna sul metodo 
-secondario \texttt{\_deserializeCustom}: il Ground Truth D4J vi
-introduce una modifica aggiuntiva, sostituendo \texttt{null} con \texttt{deser.getNullValue()}
-nel ramo \texttt{VALUE\_NULL}:
-
-\begin{center}
-\texttt{// GT D4J --- \_deserializeCustom}\\
-\texttt{value = (t == JsonToken.VALUE\_NULL) ? deser.getNullValue() : deser.deserialize(jp, ctxt);}
-\end{center}
-
-\noindent HybridRepair non modifica \texttt{\_deserializeCustom}, lasciando invariato:
-
-\begin{center}
-\texttt{// HybridRepair / VibeRepair --- \_deserializeCustom}\\
-\texttt{value = (t == JsonToken.VALUE\_NULL) ? null : deser.deserialize(jp, ctxt);}
-\end{center}
-
-\noindent Il confronto con ha rivelato che anche VibeRepair mantiene
-\texttt{null} in \texttt{\_deserializeCustom}, adottando la stessa scelta di HybridRepair
-anziché quella del GT D4J. La divergenza dal Ground Truth su questo metodo secondario
-non è dunque una lacuna specifica di HybridRepair, bensì una scelta condivisa da un
-sistema indipendente e non penalizzata da alcun test nella suite.
-La patch viene pertanto promossa a valida.
+\textbf{JacksonDatabind-3} illustra il valore del confronto con sistemi indipendenti
+nella classificazione dei casi limite. Il bug riguarda la gestione di un token null
+all'interno di un deserializzatore: HybridRepair introduce una guardia esplicita
+sull'oggetto deserializzatore che, grazie a un controllo analogo già presente a monte
+nel flusso, produce sempre lo stesso risultato del Ground Truth.
+La patch era stata inizialmente classificata come caso di test-suite blindness per
+una divergenza su un metodo secondario dello stesso file, dove il Ground Truth
+introduce una modifica aggiuntiva che HybridRepair omette. Il confronto con
+VibeRepair ha però rivelato che anche quest'ultimo adotta la stessa scelta di
+HybridRepair su quel metodo secondario, anziché seguire il Ground Truth. La
+divergenza è dunque una decisione condivisa da due sistemi indipendenti, non
+penalizzata da alcun test nella suite, motivo per cui la patch è stata promossa a valida.
 
 % ─────────────────────────────────────────────
 \subsection{Casi problematici e \emph{test-suite blindness}}
 
-Le 7 patch plausibili-non-valide di HybridRepair si distribuiscono in due sottocategorie: 2 casi
-intercettati automaticamente dal validatore semantico della pipeline
-(Csv-9, Csv-11, con \texttt{semantic\_valid: false}), e 5 casi di \emph{test-suite
-blindness} rilevati solo dalla revisione manuale
+Le 7 patch plausibili-non-valide di HybridRepair si distribuiscono in due sottocategorie:
+2 casi intercettati automaticamente dal validatore semantico della pipeline (Csv-9, Csv-11),
+e 5 casi di \emph{test-suite blindness} rilevati solo dalla revisione manuale
 (Chart-16, Closure-2, JacksonCore-8, JacksonDatabind-13, Jsoup-89).
 
 \textbf{Csv-9 e Csv-11} rappresentano i due casi intercettati dal validatore semantico
-automatico con \texttt{semantic\_valid: false}.
-In Csv-9, il modello è intervenuto nel metodo sbagliato
-(\texttt{CSVParser.initializeHeader()} invece di \texttt{CSVRecord.putIn()}),
-violando il contratto documentato nel Javadoc
-(\texttt{@return null if the format has no header}).
-In Csv-11, l'introduzione di un \texttt{continue} scartava silenziosamente le colonne
-con header \texttt{null}, disallineando gli indici e la mappa nome$\rightarrow$indice
---- una modifica del contratto API non rilevata dai 57 test esistenti.
-Questi casi confermano l'utilità del validatore semantico automatico come filtro
-preventivo rispetto alla sola esecuzione della test suite.
+automatico. In entrambi, la patch supera la suite di test ma viola un contratto API
+non coperto dai test stessi. In Csv-9, il modello è intervenuto nel metodo sbagliato:
+ha corretto il punto dove il valore null si manifestava, anziché la sua origine,
+alterando così il contratto documentato relativo al comportamento atteso in assenza di
+intestazione. In Csv-11, la patch ha introdotto un'istruzione di skip sulle colonne
+con intestazione nulla che, pur eliminando l'eccezione, ha disallineato la corrispondenza
+tra indici numerici e nomi di colonna, alterando silenziosamente il comportamento
+dell'intera struttura dati. Questi casi confermano l'utilità del validatore semantico
+come filtro preventivo rispetto alla sola esecuzione della suite di test.
 
-
-\textbf{Chart-16} illustra un caso di over-editing. Il fix del costruttore è identico
-al Ground Truth, ma nel metodo \texttt{setCategoryKeys} il modello rimuove un controllo
-di validazione della lunghezza e la chiamata \texttt{fireDatasetChanged()}, introducendo
-una regressione comportamentale non rilevata dai 20/20 test.
+\textbf{Chart-16} illustra un caso di over-editing. La patch corregge correttamente
+il costruttore, ma interviene anche su un metodo correlato rimuovendo sia un controllo
+di validazione sia una notifica di aggiornamento agli osservatori registrati. La
+rimozione introduce una regressione comportamentale non rilevata dai test, poiché
+la notifica rimossa ha effetti collaterali attesi su altri componenti del sistema.
 Questo evidenzia come il vincolo di minimalità nel prompt debba essere bilanciato con
-una comprensione più profonda degli invarianti del codice: non è sufficiente minimizzare
-le righe modificate se non si preservano le chiamate con effetti collaterali attesi.
+una comprensione degli invarianti del codice: non è sufficiente minimizzare le righe
+modificate se non si preservano le operazioni con effetti collaterali attesi.
 
 \subsection{Direzioni di miglioramento}
 
