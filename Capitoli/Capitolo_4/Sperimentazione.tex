@@ -397,15 +397,17 @@ Questo risultato dimostra che la guida semantica di LogicFL, combinata con il pa
 Chain-of-Thought di SpecReason, orienta il modello generativo verso la causa radice del
 bug anziché verso patch superficiali.
 
-Analizzando i bug risolti esclusivamente da ciascun sistema, emergono due pattern
-distinti. HybridRepair eccelle su bug multi-punto con propagazione NPE cross-method
+Analizzando i bug risolti esclusivamente da ciascun sistema, qui invece emergono due pattern
+distinti. HybridRepair eccelle su bug multi-punto, ovvero bug che richiedono modifiche in più
+punti distinti del codice sorgente, con propagazione NPE cross-method
 (Chart-4, Chart-14, Codec-13, Codec-17, Lang-39), dove la catena causale di LogicFL
 guida il modello verso tutti i punti di intervento necessari.
 VibeRepair produce invece patch corrette su bug dove la specifica comportamentale è più
 facilmente inferibile dai test fallenti (Csv-9, Csv-11, JacksonCore-8, Jsoup-89).
 Su questi stessi bug, HybridRepair genera patch plausibili che superano i test ma presentano
 una copertura parziale del difetto o introducono comportamento scorretto su aspetti non testati
-dalla suite, un caso tipico di \emph{test-suite blindness}, e sono state quindi classificate come non valide.
+dalla suite, un caso tipico di \emph{test-suite blindness}, e sono state quindi classificate come 
+non valide.
 
 \subsection{Casi di successo rappresentativi}
 
@@ -423,14 +425,17 @@ coppie di elementi null nei due array di input, semanticamente identica al Groun
 Truth; l'unica differenza è l'ordine dei due operandi della condizione, una variazione
 stilistica priva di effetti semantici.
 
-\textbf{Csv-4} evidenzia il funzionamento del meccanismo di retry adattivo. Il primo
-tentativo produceva una patch semanticamente errata: restituiva una struttura dati
-vuota invece di null in alcuni casi, causando il fallimento di un test su 48. Il
-secondo tentativo, con temperatura leggermente aumentata, ha generato la soluzione
-corretta, quasi identica al Ground Truth, con la sola differenza nell'uso di una
-sintassi Java più moderna ma semanticamente equivalente.
+\textbf{Csv-4} evidenzia il funzionamento del meccanismo di retry adattivo.
+Il bug si manifesta quando il parser è configurato senza header: il tentativo di costruire
+una copia difensiva di una mappa nulla solleva un NPE, mentre il contratto prevede la
+restituzione di \texttt{null}.
+Il primo tentativo produceva una soluzione eccessivamente ampia, modificando più punti del
+codice e causando la restituzione di una mappa vuota invece di \texttt{null}, con il
+fallimento di 1 test su 48. Il secondo tentativo ha generato una guard clause ternaria
+di una sola riga quasi identica al Ground Truth, con l'unica differenza in una variazione
+sintattica stilistica senza effetti semantici.
 
-\textbf{JacksonDatabind-3} illustra il valore del confronto con sistemi indipendenti
+\textbf{JacksonDatabind-3} è l'esempio migliore del valore nel confronto con sistemi indipendenti (VibeRepair)
 nella classificazione dei casi limite. Il bug riguarda la gestione di un token null
 all'interno di un deserializzatore: HybridRepair introduce una guardia esplicita
 sull'oggetto deserializzatore che, grazie a un controllo analogo già presente a monte
@@ -440,8 +445,9 @@ una divergenza su un metodo secondario dello stesso file, dove il Ground Truth
 introduce una modifica aggiuntiva che HybridRepair omette. Il confronto con
 VibeRepair ha però rivelato che anche quest'ultimo adotta la stessa scelta di
 HybridRepair su quel metodo secondario, anziché seguire il Ground Truth. La
-divergenza è dunque una decisione condivisa da due sistemi indipendenti, non
-penalizzata da alcun test nella suite, motivo per cui la patch è stata promossa a valida.
+divergenza è dunque una scelta indipendentemente condivisa da VibeRepair, sistema peer-reviewed,
+non penalizzata da alcun test nella suite: in base al criterio di convergenza definito
+nel protocollo di validazione, la patch è stata classificata come valida.
 
 % ─────────────────────────────────────────────
 \subsection{Casi problematici e \emph{test-suite blindness}}
@@ -469,28 +475,27 @@ rimozione introduce una regressione comportamentale non rilevata dai test, poich
 la notifica rimossa ha effetti collaterali attesi su altri componenti del sistema.
 Questo evidenzia come il vincolo di minimalità nel prompt debba essere bilanciato con
 una comprensione degli invarianti del codice: non è sufficiente minimizzare le righe
-modificate se non si preservano le operazioni con effetti collaterali attesi.
+modificate se non si preservano le operazioni con effetti collaterali.
 
 \subsection{Direzioni di miglioramento}
 
-L'analisi dei casi problematici suggerisce alcune direzioni concrete per una successiva
-iterazione del sistema. I due casi intercettati dal validatore semantico (Csv-9, Csv-11)
-indicano che il valutatore di plausibilità potrebbe essere esteso con un controllo
-automatico dei contratti documentati nel Javadoc (ad esempio annotazioni
-\texttt{@return}, \texttt{@throws}), così da intercettare a monte le violazioni di
-contratto API non coperte dalla suite di test. Il caso Closure-2 suggerisce invece di
-estendere SpecReason con una verifica esplicita degli effetti dell'early return
-introdotto sui rami di controllo preesistenti (es. chiamate ricorsive), per ridurre i
-casi di test-suite blindness legati a comportamenti più aggressivi del Ground Truth.
-Il caso Chart-16 evidenzia infine la necessità di arricchire il prompt del PatchAgent
-con un'analisi statica delle chiamate rimosse rispetto al codice originale, in modo da
-segnalare la rimozione di chiamate con effetti collaterali (come
-\texttt{fireDatasetChanged()}) come potenziale regressione, anche quando la patch
-supera la suite di test.
+%L'analisi dei casi problematici suggerisce alcune direzioni concrete per una successiva
+%iterazione del sistema. I due casi intercettati dal validatore semantico (Csv-9, Csv-11)
+%indicano che il valutatore di plausibilità potrebbe essere esteso con un controllo
+%automatico dei contratti documentati nel Javadoc (ad esempio annotazioni
+%\texttt{@return}, \texttt{@throws}), così da intercettare a monte le violazioni di
+%contratto API non coperte dalla suite di test. Il caso Closure-2 suggerisce invece di
+%estendere SpecReason con una verifica esplicita degli effetti dell'early return
+%introdotto sui rami di controllo preesistenti (es. chiamate ricorsive), per ridurre i
+%casi di test-suite blindness legati a comportamenti più aggressivi del Ground Truth.
+%Il caso Chart-16 evidenzia infine la necessità di arricchire il prompt del PatchAgent
+%con un'analisi statica delle chiamate rimosse rispetto al codice originale, in modo da
+%segnalare la rimozione di chiamate con effetti collaterali come potenziale regressione,
+%anche quando la patch supera la suite di test.
 
 Sul fronte della fault localization, i 15 fallimenti di RQ1 si concentrano su bug con
-catene causali complesse o dipendenze inter-procedurali profonde (Closure-171,
-JacksonDatabind-107, i bug di Commons Math e Mockito-18): un miglioramento di LogicFL
+catene causali complesse o dipendenze inter-procedurali profonde
+(\mbox{Closure-171}, JacksonData\-bind\nobreakdash-107, i bug di Commons Math e \mbox{Mockito-18}): un miglioramento di LogicFL
 su questi pattern, o un meccanismo di fallback che combini più ipotesi di
 localizzazione, potrebbe aumentare la copertura del sistema. Infine, una successiva
 sperimentazione dovrebbe estendere il dataset oltre i 37 bug NPE qui considerati, per
@@ -503,46 +508,56 @@ si confermano su un campione più ampio e su altre categorie di difetti.
 \subsection{Validità interna}
 \begin {itemize}
         \item \textbf{Soggettività nella validazione manuale:} la classificazione di una patch come valida
-         o plausibile-non-valida richiede un giudizio umano sull'equivalenza semantica con il 
-         Ground Truth. Sebbene siano stati adottati criteri espliciti, 
-         la valutazione di casi limite (come JacksonDatabind-93, classificato come valido pur con una 
-         strategia di fix diversa) introduce un margine di incertezza. Per mitigare questo rischio, 
-         i criteri di valutazione sono stati definiti a priori e documentati.
-         \item \textbf{Qualità dell'output di LogicFL:} la dipendenza dell'intera pipeline dall'output di LogicFL 
-         rappresenta un punto di fragilità. Su alcuni bug, LogicFL non converge o produce catene causali 
-         incomplete, degradando le prestazioni di SpecReason e PatchAgent a quelle di un sistema APR senza 
-         fault localization semantica.
-         \item \textbf{Non-determinismo del LLM:} le risposte del modello linguistico sono stocastiche. Esecuzioni 
-         ripetute dello stesso bug potrebbero produrre patch diverse. I risultati riportati si riferiscono 
-         a una singola esecuzione per bug.
+         o plausibile/non valida richiede una valutazione dell'equivalenza semantica con il Ground Truth
+         che, sebbene guidata da criteri espliciti definiti a priori, introduce un margine di soggettività
+         nella valutazione dei casi limite. Per mitigare questo rischio, nei casi di incertezza è stato
+         adottato un criterio conservativo: in assenza di evidenza sufficiente di equivalenza semantica,
+         la patch è stata classificata come non valida, garantendo che eventuali errori di classificazione
+         vadano nella direzione di sottostimare le prestazioni del sistema piuttosto che sovrastimarle.
+         \item \textbf{Qualità dell'output di LogicFL:} la dipendenza dell'intera pipeline dall'output di LogicFL
+         rappresenta un punto di fragilità. Su alcuni bug, LogicFL non converge o produce catene causali
+         incomplete, degradando le prestazioni di SpecReason e PatchAgent a quelle di un sistema APR senza
+         fault localization semantica. Tuttavia, la pipeline non si blocca in presenza di output incompleto:
+         SpecReason opera comunque sul contesto disponibile, garantendo un degrado graduale delle prestazioni
+         piuttosto che un fallimento netto dell'intero sistema.
+         \item \textbf{Non-determinismo del LLM:} le risposte del modello linguistico sono stocastiche, pertanto
+         esecuzioni ripetute dello stesso bug potrebbero produrre patch diverse. Il budget di 3 tentativi per bug
+         assorbe parzialmente questa varianza a livello di singolo repair, riducendo la probabilità che un bug
+         riparabile venga classificato come fallimento per effetto del solo campionamento stocastico.
 \end{itemize}
 
 \subsection{Validità esterna}
 
 \begin{itemize}
-        \item \textbf{Dimensione del dataset:} il dataset di 37 bug, pur essendo rappresentativo di diverse librerie 
-        Java open source, è limitato. I risultati potrebbero non generalizzare a tutti i tipi di NPE o a 
-        basi di codice con caratteristiche strutturali molto diverse.
-        \item \textbf{Potenziale data leakage del LLM:} come discusso nel Capitolo 1, i bug di Defects4J sono stati 
-        introdotti nei dati di pre-training dei modelli linguistici. Una parte delle patch corrette potrebbe 
-        derivare dalla memorizzazione del Ground Truth durante il pre-training piuttosto che da ragionamento 
-        genuino. Sebbene l'architettura ibrida mitighi questa criticità vincolando la generazione alle catene 
-        causali di LogicFL, l'effetto non è del tutto eliminabile.
+        \item \textbf{Dimensione del dataset:} il dataset di 37 bug, pur coprendo 12 progetti Java open source eterogenei,
+        è limitato a bug di tipo NPE estratti da Defects4J. I pattern di successo osservati, in particolare
+        l'efficacia su bug multi-punto con propagazione cross-method, potrebbero non trasferirsi a categorie
+        di difetti strutturalmente diverse o a basi di codice con dipendenze inter-procedurali più profonde
+        di quelle rappresentate nel dataset.
+        \item \textbf{Potenziale data leakage del LLM:} i bug di Defects4J potrebbero essere presenti nei dati
+        di pre-training di GPT-4o, introducendo un rischio di memorizzazione del Ground Truth. Tuttavia, poiché
+        sia HybridRepair che VibeRepair utilizzano lo stesso modello base, l'effetto è simmetrico e non influenza
+        le conclusioni comparative di RQ3: eventuali vantaggi da memorizzazione si applicano in egual misura a
+        entrambi i sistemi, rendendo la differenza di prestazioni attribuibile all'architettura e non al modello
+        sottostante.
 \end{itemize}
 
 \subsection{Validità di costrutto}
 
 \begin{itemize}
-  \item \textbf{Definizione di "patch valida":} la scelta del Ground Truth di Defects4J come riferimento per la validità 
-  introduce un bias: il Ground Truth rappresenta la soluzione scelta dagli sviluppatori originali, ma potrebbero 
-  esistere patch semanticamente corrette e alternative equivalenti. Alcune patch classificate come plausibili-non-valide 
-  potrebbero essere in realtà soluzioni alternative ugualmente corrette.
-  \item \textbf{Confronto asimmetrico con VibeRepair:} il confronto nella RQ3 presenta due asimmetrie metodologiche.
-   La prima riguarda le condizioni di fault localization: VibeRepair opera sotto Perfect Fault Localization, mentre 
-   HybridRepair esegue la localizzazione autonomamente. La seconda riguarda i dati utilizzati: i risultati di VibeRepair 
-   provengono dal paper originale e non da una riesecuzione controllata sullo stesso ambiente sperimentale. Differenze 
-   nelle versioni di Defects4J, nelle configurazioni di test o nella versione del modello GPT-4o utilizzato 
-   (HybridRepair usa gpt-4o-2024-02-01, VibeRepair usa gpt-4o-2024-05-13) potrebbero influenzare il confronto. 
-   Infine, il numero di patch plausibili di VibeRepair sui 37 bug del dataset non è direttamente disponibile nei dati 
-   pubblicati, rendendo il confronto sulla metrica RQ1 solo stimabile.
+  \item \textbf{Definizione di "patch valida":} la scelta del Ground Truth di Defects4J come riferimento per la validità
+  introduce un bias: il Ground Truth rappresenta la soluzione scelta dagli sviluppatori originali, ma potrebbero
+  esistere patch semanticamente corrette e alternative equivalenti. Alcune patch classificate come plausibili/non valide
+  potrebbero essere in realtà soluzioni alternative ugualmente corrette. È tuttavia importante notare la direzione
+  di questo bias: eventuali errori di classificazione porterebbero a sottostimare le prestazioni di HybridRepair,
+  non a sovrastimarle, rendendo i risultati riportati conservativi rispetto alle possibili capacità reali del sistema.
+  \item \textbf{Confronto asimmetrico con VibeRepair:} i risultati di VibeRepair utilizzati nel confronto
+  provengono dal paper originale e non da una riesecuzione controllata sullo stesso ambiente sperimentale.
+  Differenze nella versione del modello GPT-4o utilizzato
+  (HybridRepair usa gpt-4o-2024-02-01, VibeRepair usa gpt-4o-2024-05-13) potrebbero influenzare
+  il confronto. La versione utilizzata da HybridRepair non è stata una scelta discrezionale, bensì
+  l'unica disponibile tramite il deployment Azure OpenAI al momento della sperimentazione.
+  In particolare, la versione più recente di GPT-4o utilizzata da VibeRepair costituisce un
+  vantaggio strutturale a suo favore: il fatto che HybridRepair superi comunque VibeRepair in queste
+  condizioni rende il risultato comparativo più robusto.
 \end{itemize}
