@@ -27,165 +27,53 @@ segregazione assicura che la tracciabilità del processo diagnostico rimanga sem
 mitigando alla radice l'ambiguità inerente al linguaggio naturale.
 
 
-\subsection{\textit{Pipeline} dei Dati: }
-\textit{Input} e \textit{Output} delle Tre Fasi
-Per garantire che i moduli siano testabili in isolamento e sostituibili, l'intero flusso di informazioni 
+\subsection{\textit{Pipeline} dei dati: input e output delle tre fasi}
+Per garantire che i moduli siano testabili in isolamento e sostituibili, l'intero flusso di informazioni
 intra-fase è governato da un contratto di interfaccia esplicito. Le strutture dati che mediano le transizioni 
 sono fortemente tipizzate e centralizzate nel modulo shared/models.py, realizzando un'architettura robusta e 
 resistente agli errori di disallineamento dei dati.
 
 
-\subsubsection{Fase 1 — FaultOracle (fault\_oracle/)}
-La prima fase ha l'onere esclusivo di localizzare il difetto nel codice sorgente Java e di 
-derivare una diagnosi causale strutturata. In virtù della necessità di costruire una base di verità oggettiva, 
-l'operazione esclude categoricamente l'uso di modelli generativi, affidandosi esclusivamente ad analisi statica 
-e ragionamento deduttivo. Questa scelta è fondamentale: l'analisi causale deterministica deve sempre precedere 
-quella generativa per evitare che il LLM "inventi" problemi inesistenti.
+La Tabella~\ref{tab:pipeline_io} riassume, per ciascuna delle tre fasi, le informazioni in ingresso, la
+natura dell'elaborazione e l'artefatto prodotto. I paragrafi successivi ne descrivono il ruolo
+concettuale; il funzionamento interno di ogni fase è trattato in dettaglio nelle sezioni dedicate
+(\ref{sec:fase1}, \ref{sec:fase2} e \ref{sec:fase3}).
 
-\textit{\textbf{Input}}:
+\begin{table}[H]
+\centering
+\small
+\caption{Input, elaborazione e output delle tre fasi della \textit{pipeline}.}
+\label{tab:pipeline_io}
+\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X l@{}}
+\toprule
+\textbf{Fase} & \textbf{Input} & \textbf{Elaborazione} & \textbf{Output} \\
+\midrule
+\textbf{1. FaultOracle} & \texttt{bug\_id} e artefatti LogicFL pre-generati (\texttt{fault\_locs}, \texttt{root\_cause}, \texttt{stack\_traces}) & Analisi statica e deduzione logica (Prolog); nessun modello generativo & \texttt{FaultReport} \\
+\addlinespace
+\textbf{2. SpecReason} & \texttt{FaultReport} & Raccolta del contesto API + ragionamento \textit{Chain-of-Thought} con auto-critica; nessun codice prodotto & \texttt{RepairSpec} + \texttt{Ingredients} \\
+\addlinespace
+\textbf{3. PatchAgent} & \texttt{FaultReport}, \texttt{RepairSpec}, \texttt{Ingredients} & Agente LLM iterativo (FSM) che genera, applica, compila e testa la \textit{patch} in \textit{sandbox} & \texttt{RepairResult} \\
+\bottomrule
+\end{tabularx}
+\end{table}
 
-\begin{itemize}
-    \item  bug\_id: l'identificatore univoco del difetto nel \textit{dataset} Defects4J (es. Chart-2).
+\paragraph{Fase 1 --- FaultOracle.} Ha l'onere esclusivo di localizzare il difetto nel codice sorgente
+Java e di derivarne una diagnosi causale strutturata. L'operazione esclude categoricamente i modelli
+generativi, affidandosi solo ad analisi statica e ragionamento deduttivo: l'analisi causale
+deterministica deve sempre precedere quella generativa, per evitare che l'LLM ``inventi'' problemi
+inesistenti. L'esito è un oggetto \texttt{FaultReport} che aggrega le locazioni del \textit{fault}
+ordinate per sospiciosità, le catene causali (grezze e semanticamente ancorate) e il contesto dinamico
+del fallimento.
 
-    \item  artefatti: Artefatti LogicFL pre-generati e memorizzati in defects4j/$<$bug\_id\\$>$/result/. Questi comprendono fault\_locs.txt 
-    (metriche di sospiciosità e locazioni del \textit{fault}), root\_cause.txt (catene causali di NullPointerException 
-    o altri \textit{bug}, derivate da inferenza Prolog) e stack\_traces.txt (le tracce di errore reali prodotte 
-    dall'esecuzione dei \textit{test} falliti).
-\end{itemize}
-Elaborazione interna:
-\begin{itemize}
-    
-\item 
-logicfl\_runner.py: Modulo preposto all'orchestrazione dell'ambiente LogicFL (o al recupero in \textit{cache} dei 
-risultati), incaricato di eseguire l'analisi statica Prolog sul codice sorgente dell'applicativo Java e sui 
-suoi artefatti.
-\item
-logicfl\_parser.py e ast\_extractor.py: L'\textit{output} testuale di LogicFL viene decodificato per isolare la 
-classe, la riga incriminata e il percorso del \textit{file}. Successivamente, la locazione viene arricchita con 
-l'albero sintattico del metodo circostante. In questo frangente, si è scelto di adottare \textit{tree-sitter} 
-all'interno di ast\_extractor.py. L'uso di un \textit{parser} basato su \textit{Abstract Syntax Tree} (AST) mitiga 
-criticamente i limiti delle espressioni regolari (\textit{regex}), utilizzate unicamente come meccanismo di 
-\textit{fallback}, poiché l'analisi di un linguaggio \textit{context-free} come Java tramite \textit{regex} è 
-notoriamente fragile e incline a fallimenti strutturali su firme complesse o classi anonime.
-\item 
-prolog\_grounding.py: Attua la materializzazione delle astrazioni formali. Entità prettamente simboliche generate 
-da Prolog (es. v\_r\_207) vengono risolte nei corrispettivi identificatori Java reali. Questo passaggio classifica 
-analiticamente la natura del difetto (es. NULL\_RETURN, NULL\_ARGUME\\NT, UNINITIALIZED\_FIELD) e formula direttive 
-di riparazione di natura categoriale.\\\\\\
-\end{itemize}
-\textit{\textbf{Output}}: 
-\begin{itemize}
-   
-\item 
-Viene istanziato un oggetto FaultReport. Esso aggrega:
-\item
-locations: una List[FaultLocation] ordinata algoritmicamente per \textit{score} di sospiciosità.
-\item 
-causal\_chains: una List[str] contenente le derivazioni Prolog originarie.
-\item 
-grounded\_chains: una List[GroundedNPE], le catene semantizzate dotate di classificazione tecnica e direttive 
-d'intervento.
-\item 
-failing\_tests e stack\_traces: il contesto dinamico del fallimento.\\
-\end{itemize}
+\paragraph{Fase 2 --- SpecReason.} Opera la transizione dal dominio formale della diagnosi a quello
+semantico-generativo: la diagnosi di Fase~1 viene trasformata in una specifica di riparazione in
+linguaggio naturale attraverso un ragionamento \textit{Chain-of-Thought}. In questa fase
+\textit{non si produce ancora codice}; l'obiettivo è la sintesi di una comprensione ragionata del problema,
+ancorata alle sole API realmente disponibili e validata da un passo di auto-critica. L'output è la coppia
+\texttt{RepairSpec} + \texttt{Ingredients}.
 
-\subsubsection{Fase 2 — SpecReason (reasoner/)}
-Lo scopo di questa fase è operare una transizione fluida dal dominio formale della diagnosi al 
-dominio semantico-generativo. La diagnosi di Fase 1 viene trasformata in una specifica di riparazione linguistica 
-attraverso un ragionamento strutturato \textit{Chain-of-Thought} (CoT). Dal punto di vista del disaccoppiamento 
-architetturale, è doveroso far notare che in questa fase non si produce alcun codice\: l'obiettivo è la 
-sintesi di una comprensione profonda e ragionata del problema.
-
-\textit{\textbf{Input}}: 
-\begin{itemize}
-    
-\item 
-L'oggetto FaultReport generato dalla Fase 1.
-
-\end{itemize}
-Elaborazione interna:
-\begin{itemize}
-\item 
-ingredient\_forge.py: Prima di interrogare il modello generativo, questo \textit{script} effettua un'aggregazione 
-proattiva del contesto API Java (le dichiarazioni della classe, metodi ereditati, firme esposte, tipi importati). 
-Questo strato di astrazione viene incapsulato in un oggetto Ingredients e svolge una funzione di ancoraggio 
-cruciale (\textit{retrieval-augmented}) per prevenire le allucinazioni del LLM, costringendolo a ragionare solo 
-sulle API effettivamente disponibili nello \textit{scope} della riga difettosa.
-\item 
-spec\_builder.py: Instrada il processo generativo tramite un \textit{prompt} CoT. Imporre al modello di definire 
-(i) il comportamento errato attuale, (ii) il comportamento corretto atteso secondo i \textit{test}, e (iii) l'intervento 
-concettuale minimale richiesto, forza una riflessione logica prima di qualsivoglia manipolazione del codice, 
-abbattendo la probabilità di \textit{patch} superficiali. Il risultato è l'oggetto RepairSpec.
-\item 
-spec\_critic.py: Implementa un \textit{pattern} di auto-riflessione (\textit{self-critique}). Il LLM stesso (o 
-un'istanza indipendente) verifica la congruenza tra l'oggetto RepairSpec e la stringente diagnosi Prolog di 
-partenza, assegnando uno \textit{score} di confidenza continuo ($0.0 \leq confidence \leq 1.0$).
-\end{itemize}
-
-\textit{\textbf{Output}}: 
-\begin{itemize}
-    \item 
-    Una tupla composita (RepairSpec, Ingredients) contenente l'analisi concettuale del \textit{fix} e il dizionario statico delle dipendenze.
-\end{itemize}
-
-
-\subsubsection{Fase 3 — PatchAgent (patch\_agent/)}
-L'ultimo anello della catena ha l'incarico di materializzare la comprensione in codice eseguibile. 
-Genera, applica e valida la \textit{patch} operando all'interno di un ciclo reattivo con persistenza dello stato 
-conversazionale.
-
-\textit{\textbf{Input}}: 
-
-\begin{itemize}
-\item
-FaultReport, la tupla (RepairSpec, Ingredients) e il puntatore alla \textit{directory} locale 
-del progetto Defects4J.
-\end{itemize}
-Elaborazione interna: 
-
-Si è progettato il PatchAgent come una Macchina a Stati Finiti (\textit{Finite State Machine}, FSM). 
-L'impiego di una FSM (con stati EXPLORE $\rightarrow$ PATCH $\rightarrow$ COMPILE $\rightarrow$ TEST $\rightarrow$ DONE | RETRY) è motivato dalla necessità 
-di confinare il comportamento dell'agente LLM, impedendo \textit{loop} infiniti o azioni non monitorate. Ogni 
-manipolazione avviene su una \textit{sandbox} del sorgente, preservando in modo assoluto lo stato della 
-\textit{directory} originale.
-
-L'agente non manipola i \textit{file} ciecamente, ma ha a disposizione 6 \textit{tool} specializzati, integrati 
-per ancorare il ragionamento probabilistico del LLM a azioni concrete sul progetto Java.
-
-\begin{itemize}
-\item
-read\_file: Consente la lettura mirata di \textit{file} Java; fondamentale per estendere il contesto dinamicamente 
-senza sovraccaricare la \textit{context window} del LLM.
-\item 
-search\_symbol: Implementa una ricerca sintattica nel progetto per localizzare definizioni di metodi o variabili 
-non presenti negli Ingredients iniziali.
-\item 
-get\_method\_signature: Effettua la verifica formale delle firme API prima del loro utilizzo, fungendo da argine 
-diretto contro l'invocazione di metodi inesistenti.
-\item 
-apply\_ast\_patch: Modifica il \textit{file} sorgente target a livello di albero AST tramite \textit{tree-sitter}; 
-evita la corruzione di parentesi o rientranze tipica delle \textit{patch} generate in formato testuale puro.
-\item 
-compile\_check: Innesca la \textit{build} della \textit{sandbox}; permette all'agente di ricevere \textit{feedback} 
-immediato sui classici errori di sintassi Java prima dell'esecuzione dei \textit{test}.
-\item 
-run\_tests: Lancia il \textit{framework} JUnit e parsa i risultati (\textit{pass/fail} e \textit{stack trace}), 
-offrendo il verdetto oracolare sull'efficacia della \textit{patch}.
-\end{itemize}
-Il sistema integra una logica di tolleranza all'errore iterativa guidata dalla metrica LLM\_TEMPERATURE\_SCHEDULE. 
-Questo parametro introduce una variabilità stocastica incrementale, innalzando la temperatura 
-(\textit{temperature sampling}) ai tentativi successivi per favorire l'esplorazione di soluzioni alternative 
-in caso di blocchi ripetuti. Parallelamente, conversation\_store.py persiste la memoria conversazionale su 
-\textit{file} strutturati JSONL. Iniettare il fallimento dei tentativi precedenti previene cicli di riproposizione
- di \textit{patch} non compilabili o inadeguate. Al termine dei 
-tentativi configurabili (\textit{default}: 3), sandbox\_evaluator.py orchestra una compilazione e validazione 
-JUnit finali indipendenti per fornire una certificazione obiettiva del successo.\\
-
-\textit{\textbf{Output}}: 
-\begin{itemize}
-    
-\item
-RepairResult, l'intero processo culmina nell'emissione di quest'oggetto il quale documenta 
-l'esito logico (\textit{success}), il winning\_attempt (se reperito) e la List[PatchAttempt], ossia il \textit{log} 
-crittografico contenente \textit{diff} unificati, interazioni storiche dell'agente LLM e telemetria di \textit{test}.
-\end{itemize}
+\paragraph{Fase 3 --- PatchAgent.} Materializza la comprensione in codice eseguibile. Un agente LLM,
+governato da una Macchina a Stati Finiti, genera, applica, compila e testa la \textit{patch} operando
+su una \textit{sandbox} isolata del sorgente, con un meccanismo di \textit{retry} adattivo che apprende
+dai fallimenti precedenti. Il processo culmina nell'oggetto \texttt{RepairResult}, che documenta l'esito,
+il tentativo vincente e lo storico completo dei tentativi.

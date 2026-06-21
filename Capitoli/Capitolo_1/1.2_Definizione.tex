@@ -226,17 +226,13 @@ del codice proprio per prevenire la generazione di \textit{output} apparentement
 Infine, [Sepidband et al., 2026] confermano che vincolare l'attenzione del modello con un ragionamento causale 
 mirato risulta assolutamente essenziale per convertire il recupero di frammenti di codice isolati in una riparazione efficace \cite{sepidband2026rgfl}.
 
-A tal fine, questa ricerca si baserà sull'integrazione di \textit{LogicFL} \cite{kim2024identifying}, uno strumento di 
-localizzazione dei guasti specificamente progettato per le \textit{NullPointerException} (NPE). A differenza degli 
-approcci basati unicamente su euristiche probabilistiche, \textit{LogicFL} si fonda sulla programmazione logica (Prolog) 
-per imitare il rigoroso processo deduttivo degli sviluppatori umani durante il \textit{debugging}. Il suo funzionamento 
-si basa sulla costruzione di una vera e propria "Base di Conoscenza" in due fasi: in primo luogo, estrae "fatti logici" 
-oggettivi tramite l'analisi statica del codice sorgente e l'analisi dinamica dell'esecuzione dei \textit{test} 
-(registrando, ad esempio, l'esatta traccia dei fallimenti e i valori specifici assunti dalle espressioni a runtime). 
-Successivamente, applica a questi fatti un set di regole formali predefinite che descrivono le relazioni di causa-effetto 
-e le modalità di propagazione dei valori \textit{null} all'interno del programma. Questo meccanismo permette di ricostruire 
-a ritroso il flusso logico, partendo dall'espressione che ha scatenato l'eccezione fino alla sua origine esatta, garantendo 
-un processo di deduzione totalmente tracciabile, trasparente e privo di ambiguità.
+A tal fine, questa ricerca si baserà sull'integrazione di \textit{LogicFL} \cite{kim2024identifying}, uno strumento di
+localizzazione dei guasti specificamente progettato per le \textit{NullPointerException} (NPE). A differenza degli
+approcci basati unicamente su euristiche probabilistiche, \textit{LogicFL} si fonda sulla programmazione logica (Prolog)
+per imitare il rigoroso processo deduttivo degli sviluppatori umani durante il \textit{debugging}, ricostruendo a ritroso
+il percorso del valore \textit{null} dall'espressione che ha scatenato l'eccezione fino alla sua origine esatta. Ne
+risulta un processo di deduzione tracciabile, trasparente e privo di ambiguità, di cui si descriverà il funzionamento
+nel dettaglio nel capitolo successivo.
 
 È proprio la rigorosa tracciabilità causale offerta da questa inferenza logica a motivare il suo impiego come "guida" per 
 i modelli generativi. L'adozione di \textit{LogicFL} all'interno del nostro approccio persegue, dunque, un duplice e vitale scopo:

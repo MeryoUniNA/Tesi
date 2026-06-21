@@ -1,0 +1,71 @@
+\section{Defects4J: il benchmark di valutazione}
+\label{sec:defects4j}
+
+L'ultimo elemento di contesto necessario prima di affrontare l'architettura riguarda i \textit{dati}
+su cui HybridRepair viene sviluppato e messo alla prova. Un sistema di riparazione automatica ha senso
+solo se valutato su difetti \emph{reali}, riproducibili e confrontabili con quelli usati dagli altri
+lavori della letteratura. Per questo motivo si è scelto \textbf{Defects4J} \cite{just2014defects4j},
+oggi lo standard \textit{de facto} per la valutazione delle tecniche di \textit{Automated Program Repair}
+in ambito Java.
+
+\subsection{Che cos'è Defects4J}
+
+Defects4J è una raccolta curata di \textit{bug} reali, estratti dalla storia di sviluppo di progetti
+\textit{open source} Java molto noti (tra cui JFreeChart, Google Closure Compiler, Apache Commons Lang,
+Apache Commons Math e Jackson). Ogni difetto non è artificiale né iniettato a tavolino, ma corrisponde
+a un problema effettivamente verificatosi e successivamente corretto dagli sviluppatori del progetto.
+Questa caratteristica è ciò che rende il benchmark credibile: misurare un sistema APR su bug sintetici
+direbbe poco sulla sua reale utilità, mentre Defects4J riproduce la complessità del software industriale.
+
+Per ciascun difetto, il \textit{framework} mette a disposizione un ambiente di esecuzione riproducibile
+e, in particolare, quattro elementi fondamentali:
+
+\begin{itemize}
+    \item la \textbf{versione difettosa} (\textit{buggy}) del codice sorgente, ovvero il programma
+    immediatamente prima della correzione;
+    \item la \textbf{versione corretta} (\textit{fixed}), che differisce dalla precedente per la sola
+    \textit{patch} applicata dagli sviluppatori e funge da soluzione di riferimento
+    (\textit{ground truth});
+    \item almeno un \textbf{test che innesca il difetto} (\textit{triggering test}), cioè un caso di
+    test che fallisce sulla versione \textit{buggy} e passa su quella \textit{fixed};
+    \item la \textbf{suite di test di regressione} associata, usata per verificare che la correzione
+    non comprometta il comportamento preesistente.
+\end{itemize}
+
+Un aspetto centrale è l'\textbf{isolamento del difetto}: la differenza tra versione \textit{buggy} e
+\textit{fixed} è minimizzata e ricondotta al solo bug in esame, depurata da modifiche estranee
+(refactoring, cambi di formattazione, aggiornamenti non correlati). Questo consente di attribuire in
+modo inequivocabile un eventuale successo o fallimento alla \textit{patch} generata, e non a fattori
+di contorno.
+
+\subsection{Identificazione dei difetti e sottoinsieme NPE}
+
+Ogni difetto è identificato da una sigla nella forma \texttt{Progetto-Numero} --- ad esempio
+\texttt{Chart-2}, \texttt{Closure-2} o \texttt{Codec-13} --- dove la prima parte indica il progetto di
+provenienza e la seconda l'indice del bug all'interno di quel progetto. È questa la notazione che il
+sistema riceve in ingresso (il \texttt{bug\_id}) e che ricorre nei capitoli successivi quando si
+illustrano casi concreti di riparazione.
+
+Poiché questa tesi si concentra sulle \textit{NullPointerException} (per le ragioni discusse nel
+Capitolo precedente), non si utilizza l'intero benchmark, bensì il \textbf{sottoinsieme dei difetti
+riconducibili a NPE}: bug il cui \textit{triggering test} fallisce proprio per via di una dereferenziazione
+di un riferimento \texttt{null}. Questo sottoinsieme costituisce il dominio di valutazione di HybridRepair.
+
+\subsection{Il ruolo di Defects4J in HybridRepair}
+
+All'interno del nostro lavoro Defects4J svolge un duplice ruolo, coerente con la \textit{pipeline}
+descritta nei capitoli seguenti:
+
+\begin{itemize}
+    \item come \textbf{sorgente di input}, fornisce per ogni \texttt{bug\_id} il codice sorgente
+    difettoso e i test falliti, ovvero esattamente il materiale da cui parte la Fase~1 (FaultOracle)
+    per la localizzazione causale;
+    \item come \textbf{oracolo di valutazione}, fornisce sia i test (che certificano se la \textit{patch}
+    risolve davvero il difetto senza introdurre regressioni) sia la versione \textit{fixed} di
+    riferimento, utile per un confronto qualitativo tra la correzione generata e quella umana.
+\end{itemize}
+
+Avere chiaro fin da ora che cosa sia Defects4J, come siano strutturati i suoi difetti e quale
+sottoinsieme venga impiegato è il presupposto necessario per seguire i capitoli successivi, nei quali
+i singoli bug (a partire dal già citato \texttt{Closure-2}) verranno richiamati come esempi concreti
+del funzionamento del sistema.

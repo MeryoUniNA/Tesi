@@ -1,0 +1,128 @@
+\section{Sintesi dell'architettura, discussione e limitazioni}
+\label{sec:discussione-architettura}
+
+Conclusa la descrizione dettagliata delle tre fasi, è utile ricomporre il quadro
+d'insieme e, soprattutto, discutere con onestà i confini di validità del sistema.
+Questa sezione finale chiude il capitolo architetturale in due momenti: una sintesi
+complessiva della \textit{pipeline} e un'analisi critica delle sue principali limitazioni.
+
+\subsection{Sintesi complessiva della pipeline}
+
+L'architettura di \texttt{HybridRepair} realizza la separazione tra diagnosi e sintesi
+illustrata nel Capitolo precedente attraverso tre fasi nettamente disaccoppiate:
+\texttt{FaultOracle} produce una diagnosi causale formale e deterministica;
+\texttt{SpecReason} la trasforma in una specifica di riparazione ragionata, ancorata alle
+sole API reali; \texttt{PatchAgent} traduce infine la specifica in codice, applicandolo e
+validandolo in modo autonomo. Ciascuna fase è progettata per neutralizzare una specifica
+classe di fallimento tipica dei sistemi APR basati su LLM.
+
+La Tabella~\ref{tab:sintesi_fase_2} riepiloga i tre livelli della Fase~2, associando a
+ciascun modulo il meccanismo tecnico adottato e la problematica che esso affronta.
+
+\begin{table}[htbp]
+\centering
+\begin{tabularx}{\textwidth}{ll >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\toprule
+\textbf{Livello} & \textbf{Componente} & \textbf{Meccanismo} & \textbf{Problema Affrontato} \\
+\midrule
+Grounding statico & Ingredient Forge & Estrazione regex da sorgente Java & Allucinazione di API \\
+Ragionamento strutturato & SpecBuilder (CoT) & Prompt XML tripartito a bassa temperatura & Deriva semantica e pattern matching \\
+Validazione autonoma & SpecCritic & Auto-critica con confidence scoring & Incongruenza tra specifica ed evidenza empirica \\
+\bottomrule
+\end{tabularx}
+\caption{Sintesi del flusso della Fase 2 di HybridRepair.}
+\label{tab:sintesi_fase_2}
+\end{table}
+
+In modo analogo, la Tabella~\ref{tab:sintesi_fase3} riassume i quattro contributi tecnici
+che compongono la Fase~3, dalla Macchina a Stati Finiti che struttura il processo fino al
+sandbox deterministico che ne certifica l'esito.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{>{\raggedright\arraybackslash}p{2.8cm} >{\raggedright\arraybackslash}p{4.6cm} >{\raggedright\arraybackslash}p{4.2cm} >{\raggedright\arraybackslash}p{3.4cm}}
+\toprule
+\textbf{Contributo} & \textbf{Modulo} & \textbf{Meccanismo} & \textbf{Problema Risolto} \\
+\midrule
+FSM di riparazione & \texttt{agent.py} & Prompt workflow + retry loop & Mancanza di struttura nel processo generativo \\
+Memoria conversazionale & \texttt{conversation\_store.py} & Serializzazione JSONL + negative prompting & Loop sterile inter-tentativo \\
+Riparazione strutturale & \texttt{ast\_applier.py} & Tree-sitter CST + sostituzione byte-offset & Patch rotte da regex sbilanciate \\
+Sandbox deterministico & \texttt{sandbox\_evaluator.py} & \texttt{javac} + \texttt{JUnitCore} come oracoli & Validazione sintattica e semantica autonoma \\
+\bottomrule
+\end{tabular}
+\caption{Sintesi dei contributi tecnici della Fase 3 di HybridRepair.}
+\label{tab:sintesi_fase3}
+\end{table}
+
+Il prodotto finale della pipeline non è dunque una ``supposizione'' stocastica del modello,
+ma una \textit{patch} costruita a partire da evidenza empirica (catene Prolog, test falliti,
+contesto sintattico), filtrata attraverso un ragionamento strutturato e infine validata da
+oracoli deterministici. È proprio questo ancoraggio progressivo alla verità del programma a
+distinguere \texttt{HybridRepair} dagli approcci puramente generativi.
+
+\subsection{Limitazioni}
+
+L'architettura, pur introducendo avanzamenti significativi nella gestione del contesto e nel
+ragionamento guidato per l'\textit{Automated Program Repair}, non è esente da vulnerabilità
+strutturali e concettuali. Un'analisi rigorosa impone di esaminarne onestamente i limiti
+operativi, delineando i confini di validità del sistema. Due in particolare meritano
+attenzione, entrambi originati dalla natura ibrida del sistema.
+
+\subsubsection{Dipendenza dalla qualità dell'output di LogicFL}
+Il primo limite risiede nell'accoppiamento logico tra le fasi della pipeline. L'architettura
+\texttt{SpecReason} incarna a tutti gli effetti un approccio \textit{knowledge-driven} (guidato
+dalla conoscenza pregressa). Di conseguenza, l'efficacia del paradigma Chain-of-Thought
+implementato nello \texttt{SpecBuilder} è strettamente e inevitabilmente subordinata alla
+qualità diagnostica dell'output generato dalla Fase~1 (\texttt{FaultOracle}).
+Se il modulo \texttt{LogicFL} non riesce a convergere, oppure produce catene causali confuse
+(scenario frequente in presenza di bug complessi, caratterizzati da propagazioni del valore
+\textit{null} attraverso molteplici chiamate di metodo \textit{cross-class} o profonde
+gerarchie di ereditarietà), la sezione \texttt{\{causal\_analysis\}} del prompt si rivela
+scarsamente informativa. In queste circostanze, il sistema subisce un degrado prestazionale
+severo: il modello linguistico è costretto a dedurre il comportamento difettoso affidandosi
+quasi unicamente alla lettura del codice sorgente grezzo e dello stack trace. Questo fa
+collassare il raffinato processo di ragionamento strutturato a un più banale pattern di
+inferenza generica, rendendo il comportamento di \texttt{HybridRepair} indistinguibile da
+quello dei tradizionali sistemi APR sprovvisti di \textit{fault localization} semantica
+avanzata. Le evidenze empiriche in letteratura confermano infatti che l'efficacia deduttiva
+del \texttt{CoT} è strettamente vincolata al rapporto segnale-rumore del prompt
+\cite{exploring_apr_2026}: i massimi vantaggi del ragionamento strutturato si materializzano
+appieno solo in presenza di diagnosi \texttt{LogicFL} di elevata qualità.
+
+\subsubsection{Il limite del self-critique}
+Il secondo limite riguarda il meccanismo di auto-critica. Il modulo \texttt{spec\_critic.py},
+pur mitigando le allucinazioni più palesi, soffre di un bias cognitivo sistematico ben
+documentato nella letteratura inerente alla \textit{self-evaluation} dei Large Language Models
+\cite{zheng2023judging}. Il nocciolo del problema risiede nel fatto che un modello linguistico
+incontra enormi difficoltà nell'identificare e correggere errori logici o deduttivi che esso
+stesso ha la tendenza a commettere sistematicamente \cite{huang2024large}.
+
+Essendo valutatore e generatore istanze del medesimo modello base (\texttt{GPT-4o}), essi
+condividono le stesse ``zone d'ombra'' euristiche e parametriche. Se, per esempio, lo
+\texttt{SpecBuilder} deduce una specifica errata scambiando regolarmente una causa distale per
+una causa prossima all'interno di una catena NPE complessa, lo \texttt{SpecCritic} tenderà con
+alta probabilità a validare tale ragionamento fallace, assegnandogli un elevato punteggio di
+confidenza. Questo fenomeno, definito \textit{echo chamber effect} dell'auto-valutazione
+\cite{panickssery2024llm}, si innesca perché il modello validatore riconosce e premia il
+pattern deduttivo che esso stesso avrebbe generato.
+
+Per spezzare questo bias di conferma speculare, la validazione necessita di un orizzonte di
+verifica esterno e strutturalmente indipendente. Le soluzioni prospettate per le iterazioni
+future dell'architettura si diramano lungo tre direttrici complementari. La prima prevede
+l'adozione di un paradigma di \textbf{Multi-Agent Debate} (o valutazione Cross-Model)
+\cite{du2023improving}: delegando il ruolo di critico a un modello linguistico di una famiglia
+concorrente (es. Claude o Gemini), si sfrutta l'eterogeneità dei dati di pre-training e
+dell'architettura per garantire che i \textit{blind-spot} del generatore non coincidano con
+quelli del validatore. La seconda direttrice esplora l'adozione di un \textbf{Process Reward
+Model (PRM)} \cite{lightman2023lets}, ovvero un modello specializzato tramite fine-tuning (una
+tecnica di addestramento secondario che ricalibra i pesi di un modello pre-esistente esponendolo
+a un set di dati mirato) esclusivamente per la verifica rigorosa di ogni singolo step logico
+della \texttt{Chain-of-Thought}, piuttosto che per la generazione di codice. Infine, la
+strategia definitiva per eradicare le allucinazioni linguistiche consiste nell'ancorare la
+critica a oracoli automatici deterministici (\textit{execution-based feedback})
+\cite{shinn2023reflexion}, come l'impiego di \textit{type checker} deputati a validare la
+correttezza sintattica e semantica del codice Java. Tali strumenti intercettano a tempo di
+compilazione eventuali allucinazioni del modello (ad esempio, l'introduzione di variabili non
+dichiarate), interrompendo immediatamente la pipeline. Parallelamente, l'utilizzo di
+\textit{model checker} formali fornisce un'analisi matematica avanzata in grado di dimostrare
+rigorosamente l'assenza di stati di stallo (\textit{deadlock}) all'interno del flusso di esecuzione.

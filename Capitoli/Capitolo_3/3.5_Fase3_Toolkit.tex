@@ -1,0 +1,385 @@
+\section{Fase 3 - PatchAgent: loop di tool-use e toolkit}
+\label{sec:fase3-toolkit}
+
+\subsection{Il Loop di Tool-Use: \texttt{AzureClient.chat\_with\_tools}}
+\label{subsec:3.4.3}
+L'implementazione concreta e operativa del ciclo iterativo dell'agente
+risiede all'interno del modulo \texttt{services/azure\_client.py}, ed è orchestrata
+dal metodo \texttt{chat\_with\_tools()}. Questo componente è responsabile della gestione
+a basso livello dell'interazione tra il \textit{Large Language Model}
+e il toolkit di strumenti a sua disposizione.
+
+\subsubsection{L'Architettura Function-Calling dell'API OpenAI}
+\label{subsubsec:3.4.3.1}
+Il fondamento tecnologico su cui si basa questa interazione
+è l'architettura \textit{Function Calling} esposta dall'API \textit{Chat Completions} di
+OpenAI. Questa specifica definisce un protocollo strutturato e rigoroso
+per la comunicazione bidirezionale tra un modello generativo e
+il codice applicativo circostante.
+
+All'interno di questo paradigma, il modello linguistico non si
+limita a emettere sequenze di token in linguaggio naturale.
+Quando l'API rileva che l'esecuzione di uno strumento è
+necessaria per progredire, restituisce un oggetto \texttt{tool\_calls} al posto
+del classico messaggio di testo. Questo oggetto contiene una
+lista di invocazioni a funzione, dove ciascuna è caratterizzata
+da un identificatore univoco (\texttt{tool\_call\_id}), dal nome della funzione
+richiesta (\texttt{function.name}) e dagli argomenti necessari, serializzati come stringa
+JSON (\texttt{function.arguments}). Il codice applicativo ha quindi la responsabilità
+di intercettare questa richiesta, eseguire fisicamente lo strumento Python
+corrispondente, e iniettare i risultati di ritorno nella storia
+conversazionale come nuovi messaggi caratterizzati dal ruolo \texttt{role: "tool"},
+associandovi il corretto \texttt{tool\_call\_id}.
+
+Il metodo \texttt{chat\_with\_tools()} astrae e implementa questo complesso protocollo
+in modo del tutto automatico, come illustrato nel seguente
+frammento logico:
+
+\begin{lstlisting}[language=Python, label={lst:chat_with_tools}]
+def chat_with_tools(self, messages: list, tools: list, max_tool_rounds: int) -> tuple:
+    """Gestisce il loop conversazionale con invocazione automatica dei tool."""
+    for _ in range(max_tool_rounds):
+        # Chiamata all'API con retry esponenziale
+        response = self._call_with_retry(messages, tools)
+        response_message = response.choices.message
+        
+        # Mutazione in-place della storia conversazionale
+        messages.append(response_message)
+        
+        # Se non ci sono tool calls, il modello ha generato il testo finale
+        if not response_message.tool_calls:
+            return response_message.content, messages
+            
+        # Esecuzione sequenziale delle funzioni richieste
+        for tool_call in response_message.tool_calls:
+            func_name = tool_call.function.name
+            try:
+                # Deserializzazione degli argomenti generati dal modello
+                args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                # Fallback di sicurezza in caso di allucinazione sintattica
+                args = {} 
+                
+            # Esecuzione fisica dello strumento (dispatch)
+            result = self._execute_tool(func_name, args)
+            
+            # Mutazione in-place: aggiunta del risultato
+            messages.append({
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": str(result)
+            })
+            
+    # Raggiungimento del limite massimo di round
+    return None, messages
+\end{lstlisting}
+
+Vi sono due aspetti implementativi vitali in questa funzione
+che meritano un'analisi approfondita:
+
+\begin{description}
+    \item[La mutazione \textit{in-place} della lista \texttt{messages}:] Dal punto di
+    vista della gestione della memoria e del flusso dei
+    dati, la lista dei messaggi viene passata per riferimento
+    e modificata direttamente (tramite \texttt{.append()}) ad ogni iterazione del
+    loop. Questa scelta permette al chiamante
+    di livello superiore (il metodo \texttt{PatchAgent.\_run\_\\single\_attempt()}) di avere sempre
+    a disposizione l'intera storia conversazionale sincronizzata, anche qualora il
+    metodo termini prematuramente. Di conseguenza, sebbene la funzione restituisca
+    esplicitamente una tupla (\texttt{final\_text\_response}, \texttt{updated\_messages}), l'oggetto \texttt{updated\_messages} restituito non
+    è una copia, bensì la medesima istanza originaria mutata
+    \textit{in-place}.
+
+    \item[Il blocco try/except per \texttt{json.loads()} con fallback a dizionario vuoto:]
+    Prima di poter essere iniettati nella funzione Python target,
+    gli argomenti generati dal modello devono essere deserializzati da
+    formato JSON a dizionario. Tuttavia, l'LLM è intrinsecamente un
+    sistema probabilistico e può incorrere in allucinazioni sintattiche, generando
+    stringhe JSON malformate o sfuggite a escape. Il blocco
+    \texttt{try/except json.JSONDecodeError} intercetta silenziosamente queste anomalie. Invece di far collassare
+    l'intero processo con un'eccezione a runtime, il sistema applica
+    un fallback iniettando un dizionario vuoto (\texttt{args = \{\}}). Lo
+    strumento di destinazione, ricevendo parametri mancanti, fallirà la sua
+    validazione interna e restituirà un chiaro messaggio di errore
+    testuale. Questo approccio è architetturalmente superiore al crash: nel
+    round successivo, l'LLM riceverà l'errore autogenerato, capirà di aver
+    emesso argomenti invalidi e correggerà autonomamente la propria invocazione.
+\end{description}
+
+\subsubsection{Il Budget di Tool-Call e la Prevenzione di Loop Infiniti}
+\label{subsubsec:3.4.3.2}
+Un sistema agente lasciato libero di invocare strumenti in
+un ciclo \texttt{while} presenta un rischio critico per la
+stabilità: il possibile innesco di loop infiniti. Un modello
+debolmente istruito, o trovatosi in un \textit{local minimum} di
+ragionamento, potrebbe teoricamente continuare a chiamare strumenti senza sosta,
+esaurendo il budget finanziario dell'API senza mai giungere a
+una convergenza.
+
+Per scongiurare questo scenario, il metodo introduce il concetto
+di budget di round (rappresentato dal parametro \texttt{max\_tool\_rounds}), il
+quale agisce da meccanismo di sicurezza (\textit{safety limit}).
+Nel contesto di \texttt{HybridRepair}, questo budget è matematicamente derivato
+dal limite base di passaggi dell'agente moltiplicato per una
+costante: \texttt{config.MAX\_AGENT\_STEPS * 3}.
+
+Assumendo un valore di base \texttt{MAX\_AGENT\_STEPS = 3}, il sistema
+concede all'agente un totale di 9 round di interazione.
+Questo moltiplicatore 3 non è arbitrario, ma riflette l'anatomia
+della FSM. Ciascuna delle macro-fasi costituenti (\texttt{EXPLORE}, \texttt{PATCH}, \texttt{COMPILE},
+\texttt{TEST}) richiede mediamente l'equivalente di un round. Tuttavia, come
+analizzato in precedenza, la fase \texttt{COMPILE} è suscettibile di
+innescare cicli di correzione inline (dove l'agente tenta più
+correzioni sintattiche di seguito). Moltiplicare il limite base garantisce
+un margine di tolleranza operativo, fornendo all'agente lo spazio
+necessario per assorbire un intero ciclo FSM (compresi un
+paio di tentativi di riparazione sintattica al volo) mantenendo
+allo stesso tempo un tetto rigido che trancia inesorabilmente
+i loop viziosi.
+
+\subsubsection{Il Retry Esponenziale per Errori Transitori}
+\label{subsubsec:3.4.3.3}
+L'affidabilità di un sistema automatizzato basato su cloud dipende
+dalla sua resilienza agli errori di rete e alle
+limitazioni dell'infrastruttura sottostante. Le API di Azure OpenAI (come
+quelle dirette di OpenAI) impongono vincoli rigorosi sul rate-limiting
+(numero di token e richieste per minuto). L'interazione con
+l'API è quindi delegata a un wrapper protettivo denominato
+\texttt{\_call\_with\_retry()}, che implementa un meccanismo di tolleranza ai guasti.
+
+Il codice di questa funzione implementa un pattern di
+backoff esponenziale:
+
+\begin{lstlisting}[language=Python, label={lst:call_with_retry}]
+def _call_with_retry(self, messages: list, tools: list):
+    """Esegue la chiamata API gestendo gli errori transitori di rate limit."""
+    delays = [2, 4, 8]  # Backoff esponenziale in secondi
+    
+    for attempt_idx, delay in enumerate(delays):
+        try:
+            return self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=tools
+            )
+        except openai.RateLimitError as e:
+            if attempt_idx == len(delays) - 1:
+                # Esauriti i retry, propaga l'eccezione
+                raise e
+            # Attende prima di ritentare
+            time.sleep(delay)
+\end{lstlisting}
+
+La scelta di un intervallo di attesa crescente in
+modo esponenziale (2 secondi, poi 4, infine 8) è
+il protocollo ufficialmente raccomandato per gestire l'eccezione \texttt{RateLimitError}.
+L'importanza vitale di questa progressione geometrica emerge drammaticamente durante
+l'esecuzione del sistema in modalità batch (es. tramite lo
+script \texttt{run\_all\_bugs.py}).
+
+Quando decine di thread paralleli tentano di correggere bug
+contemporaneamente, si espongono al rischio del cosiddetto \textit{thundering herd
+problem}. Se tutte le richieste
+respinte per rate-limit attendessero un intervallo fisso (es. 3
+secondi) per poi ripresentarsi in blocco contro i server
+dell'API, causerebbero un nuovo collasso immediato, paralizzando indefinitamente l'infrastruttura.
+Il backoff esponenziale scompagina questo afflusso di traffico malevolo:
+scaglionando le ritrasmissioni nel dominio del tempo, disperde i
+picchi di carico e riduce drasticamente la probabilità statistica
+di impattare a ripetizione contro i limiti imposti dal
+fornitore.
+
+\subsection{Il Toolkit dell'Agente: Sei Strumenti per la Riparazione Autonoma}
+\label{subsec:3.4.4}
+Il modulo \texttt{patch\_agent/tools.py} definisce l'intero arsenale operativo a
+disposizione del \texttt{PatchAgent}. Esso espone al modello linguistico sei strumenti
+specifici, definiti rigorosamente tramite gli schemi JSON richiesti dal protocollo
+\textit{Function Calling} dell'API OpenAI, e implementati fisicamente come funzioni Python.
+
+Un aspetto architetturale fondamentale di questo modulo è la gestione
+dello stato attraverso il pattern \textit{Context Object}. Invece di passare singolarmente i percorsi delle
+directory o le liste delle classi di test a ogni
+singola funzione, il sistema aggrega l'intero contesto operativo del tentativo
+corrente all'interno di un oggetto mutabile condiviso:
+
+\newpage
+\begin{lstlisting}[language=Python, label={lst:tool_context}]
+@dataclass
+class ToolContext:
+    bug_dir: Path
+    patched_dir: Path
+    test_classes: list[str]
+\end{lstlisting}
+
+L'iniezione di questo \texttt{ToolContext} riduce drasticamente l' accoppiamento
+tra il dispatcher centrale (la funzione \texttt{create\_tool\_executor()}) e le
+singole implementazioni degli strumenti. Questa astrazione garantisce che l'aggiunta di
+nuovi strumenti al toolkit in futuro non richieda alcuna modifica
+alla firma della funzione di routing, rendendo l'architettura altamente estensibile
+e manutenibile.
+
+\subsubsection{\texttt{read\_file}: Lettura del Codice Sorgente con Numerazione di Riga}
+\label{subsubsec:3.4.4.1}
+Il primo strumento a disposizione dell'agente è \texttt{read\_file}, essenziale
+per ispezionare fisicamente i file del progetto durante la fase
+esplorativa.
+
+\begin{lstlisting}[language=Python, label={lst:tool_read_file}]
+def tool_read_file(context: ToolContext, file_path: str) -> str:
+    """Legge il contenuto di un file sorgente applicando numerazione di riga."""
+    target_path = context.patched_dir / file_path
+    
+    with open(target_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+        
+    # Troncamento per preservare il budget di token
+    if len(content) > 30000:
+        content = content[:30000] + "\n... [TRUNCATED]"
+        
+    lines = content.split('\n')
+    # Numerazione destra-allineata a 4 cifre
+    numbered_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines)]
+    return '\n'.join(numbered_lines)
+\end{lstlisting}
+
+Due dettagli implementativi risultano cruciali in questa funzione. In primo
+luogo, la formattazione testuale \texttt{f"\{i+1:4d\} | \{line\}"} produce una
+numerazione di riga destra-allineata a 4 cifre (es. \texttt{   1 | public class...}).
+Questa scelta non è puramente estetica, ma è funzionale all'addestramento
+del modello: GPT-4 è stato ampiamente pre-addestrato su vasti corpus
+di differenze sintattiche (come i diff di GitHub) che utilizzano
+una formattazione analoga. Mantenendo questa convenzione, il modello riesce nativamente
+a riferirsi a una riga specifica per numero (es. \texttt{"the issue is at line 42"})
+e a fornire tale valore come parametro \texttt{target\_line} quando
+invocherà lo strumento di patching. In secondo luogo, viene imposto
+un limite rigoroso di 30.000 caratteri. File Java particolarmente
+monolitici (come le classi di JFreeChart, che annoverano migliaia di
+righe) consumerebbero in modo insostenibile la finestra di contesto del
+modello (\textit{token budget}). Il troncamento costringe l'agente a usare
+strategie più mirate per navigare file massivi.
+
+\subsubsection{\texttt{search\_symbol}: Ricerca Testuale nel Source Tree}
+\label{subsubsec:3.4.4.2}
+Quando il file in esame non contiene le risposte necessarie,
+l'agente può ampliare il proprio orizzonte visivo esplorando l'intero albero
+dei sorgenti tramite \texttt{search\_symbol}:
+
+\begin{lstlisting}[language=Python, label={lst:tool_search_symbol}]
+def tool_search_symbol(context: ToolContext, pattern: str) -> str:
+    """Esegue una ricerca testuale ricorsiva nel progetto target."""
+    import subprocess
+    cmd = ["grep", "-rnI", "--include=*.java", pattern, str(context.patched_dir)]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    lines = result.stdout.split('\n')
+    
+    # Limite ai primi 20 risultati per preservare il contesto
+    return '\n'.join(lines[:20])
+\end{lstlisting}
+
+Questo strumento agisce fondamentalmente come un wrapper attorno all'utility di
+sistema \texttt{grep -rnI --include=*.java}, eseguendo una ricerca \textit{case-sensitive}
+ricorsiva esclusivamente sui file Java. L'inclusione del flag \texttt{-I} è
+ fondamentale poiché ignora i file binari (come i file
+\texttt{.class} precompilati), che altrimenti genererebbero un output illeggibile e dannoso
+per il prompt. Durante la fase \texttt{EXPLORE}, questo tool viene
+impiegato tipicamente per tre scopi: localizzare l'implementazione di un metodo
+citato nello stack trace ma non presente nel file corrente;
+trovare tutte le assegnazioni di una variabile risultata \texttt{null} o individuare eventuali implementazioni
+multiple di una data interfaccia che potrebbero scatenare comportamenti inattesi.
+Anche in questo caso, l'output è troncato a 20 risultati
+per non saturare la memoria a breve termine del modello.
+
+\subsubsection{\texttt{get\_method\_signature}: Verifica delle API Reali}
+\label{subsubsec:3.4.4.3}
+Per risolvere le ambiguità legate al sistema di tipi rigoroso
+di Java, l'agente dispone dello strumento \texttt{get\_method\_signature}, che consente
+l'ispezione dinamica delle firme dei metodi:
+
+\begin{lstlisting}[language=Python, label={lst:tool_get_method_signature}]
+def tool_get_method_signature(context: ToolContext, class_path: str, method_name: str) -> str:
+    """Estrae le firme reali dei metodi pubblici per risolvere ambiguità di overload."""
+    # Riutilizzo del modulo di estrazione per coerenza
+    from logic_fl.ingredient_forge import _extract_public_methods
+    
+    target_file = context.patched_dir / class_path
+    all_methods = _extract_public_methods(target_file)
+    
+    # Filtraggio mirato sul nome del metodo
+    relevant_methods = [m for m in all_methods if method_name in m]
+    return '\n'.join(relevant_methods)
+\end{lstlisting}
+
+La brillantezza architetturale di questo strumento risiede nel riutilizzo della
+funzione \texttt{\_extract\_public\_methods()} originariamente sviluppata per il modulo \texttt{ingredient\_forge.py}
+(descritto nella Fase 2). Condividendo il medesimo estrattore, il sistema
+garantisce un'assoluta coerenza semantica: le API che l'agente esplora dinamicamente
+presenteranno la stessa medesima struttura testuale di quelle fornite staticamente
+nel prompt iniziale tramite gli ``Ingredients''. Inoltre, il parametro \texttt{method\_name}
+filtra chirurgicamente i risultati per mitigare il rumore introdotto dalle
+classi con dozzine di metodi esposti.
+
+\subsubsection{\texttt{apply\_ast\_patch}: L'Atto di Riparazione Strutturale}
+\label{subsubsec:3.4.4.4}
+Questo strumento sancisce la transizione dallo stato esplorativo allo stato
+esecutivo (\texttt{PATCH}), materializzando la modifica al codice:
+
+\begin{lstlisting}[language=Python, label={lst:tool_apply_ast_patch}]
+def tool_apply_ast_patch(context: ToolContext, file_path: str, method_name: str, new_method_body: str, target_line: int = None) -> str:
+    """Sostituisce strutturalmente il metodo target nel file sorgente."""
+    from patch_agent.ast_applier import apply_and_write
+    
+    target_path = context.patched_dir / file_path
+    
+    # Delega la sostituzione all'infrastruttura Tree-sitter
+    success, diff = apply_and_write(
+        file_path=target_path, 
+        method_name=method_name, 
+        new_source=new_method_body,
+        target_line=target_line
+    )
+    
+    if success:
+        return f"[SUCCESS] Patch applied successfully.\nDiff:\n{diff}"
+    else:
+        return f"[FAILED] Failed to apply patch."
+\end{lstlisting}
+
+Invece di tentare manipolazioni testuali grezze, la funzione delega immediatamente
+il lavoro pesante alla funzione \texttt{apply\_and\_write()} del modulo \texttt{ast\_applier.py},
+il cuore della manipolazione AST/CST basata su Tree-sitter. Un dettaglio
+di immenso valore è il ritorno del diff unificato al
+modello (\texttt{"[SUCCESS] Patch applied successfully... Diff: ..."}). Questo diff non
+viene usato per applicare la modifica, ma assume una funzione
+puramente diagnostica: offre al modello una conferma visiva esplicita di
+ciò che è stato alterato nel file. Qualora l'agente noti
+che la sostituzione ha accidentalmente eliminato righe cruciali non pertinenti
+al bug, può avvedersene immediatamente ancor prima di tentare la
+compilazione, migliorando le sue capacità di auto-correzione.
+
+\newpage
+\subsubsection{\texttt{compile\_check} e \texttt{run\_tests}: Gli Oracoli di Validazione}
+\label{subsubsec:3.4.4.5}
+Gli ultimi due strumenti del toolkit, \texttt{compile\_check} e \texttt{run\_tests},
+fungono rispettivamente da oracolo sintattico e oracolo semantico, guidando le
+fasi \texttt{COMPILE} e \texttt{TEST} della Macchina a Stati Finiti.
+Per garantire un forte isolamento architetturale e una solida tolleranza
+agli errori (timeout, loop infiniti, problemi di dipendenze), entrambi gli
+strumenti non eseguono comandi shell diretti, ma delegano integralmente l'esecuzione
+al sandbox di valutazione implementato in \texttt{sandbox\_evaluator.py}.
+
+Nello specifico, \texttt{compile\_check} si affida alla funzione \texttt{compile\_patched\_source()}. Il
+suo output (l'eventuale errore del compilatore \texttt{javac}) viene accuratamente troncato
+a 3000 caratteri. Questo espediente taglia via la verbosità a
+cascata tipica del compilatore, restituendo al modello solamente l'inizio del
+messaggio, il quale ospita la radice causale dell'errore primario.
+
+Infine, \texttt{run\_tests} innesca la funzione \texttt{evaluate()}, che si occupa
+di rieseguire la suite JUnit verificando la regressione. Il tool
+elabora l'output del test runner distillando un feedback semanticamente ricco
+che si biforca in tre direzioni: restituisce \texttt{PASS} se
+il comportamento è corretto, \texttt{COMPILE\_ERROR} se emergono disallineamenti di compilazione
+non intercettati al passo precedente, o \texttt{TEST\_FAIL} allegando gli stack
+trace. Questo responso dettagliato fornisce all'agente le coordinate necessarie per
+riconsiderare, laddove serva, la logica semantica della sua patch.
+

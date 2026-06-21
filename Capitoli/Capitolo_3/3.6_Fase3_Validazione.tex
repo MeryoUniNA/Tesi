@@ -1,0 +1,1038 @@
+\section{Fase 3 - PatchAgent: riparazione strutturale e validazione}
+\label{sec:fase3-validazione}
+
+\subsection{Riparazione Strutturale via Tree-sitter: CST vs AST}
+\label{subsec:3.4.5}
+L'approccio alla modifica del codice sorgente rappresenta uno degli snodi 
+architetturali più delicati nella progettazione diun sistema di Automated 
+Program Repair \cite{huang2024evolving}. Tradurre un'intenzione correttiva 
+in una mutazione fisica del file richiede un meccanismo che garantisca non 
+solo l'accuratezza della modifica, ma anche la validità formale dell'artefatto 
+risultante. Per soddisfare i severi requisiti di robustezza di\texttt{HybridRepair}, 
+l'architettura adotta la manipolazione diretta del \textit{ConcreteSyntax Tree}
+avvalendosi della libreria Tree-sitter, distaccandosi nettamente dai paradigmi testuali 
+classici.
+\subsubsection{I Limiti Fondamentali degli Approcci Testuali}
+\label{subsubsec:3.4.5.1}
+Prima di esplorare le specificità tecniche di Tree-sitter,è imperativo 
+analizzare criticamente le ragioni per cuigli approcci tradizionali, 
+manipolazione tramite espressioni regolari(regex), diff unificati e operatori di mutazione, 
+risultano inadeguati per un sistema APR di alta affidabilità.
+
+\paragraph{Il fallimento delle espressioni regolari e il problema del bilanciamento}\mbox{}\\
+Le espressioni regolari operano analizzando flussi monodimensionali di caratteri. 
+Questo approccio si scontra frontalmente con la natura gerarchica e 
+ricorsiva del codice sorgente Java. Un costrutto come un metodo non è una semplice sequenza lineare,
+ ma una struttura annidata che può includere blocchi condizionali \texttt{if/else}, cicli 
+ \texttt{for/while}, blocchi \texttt{try/catch/finally}, oltre a costrutti complessi come 
+ classi anonime o espressioni lambda. Ciascuno di questi elementi introduce nuovi livelli di 
+ parentesi graffe che devono essere rigorosamente bilanciati. Dal punto di vista della teoria dei 
+ linguaggi formali, il problema del bilanciamento delle parentesi appartiene alla classe dei linguaggi
+  liberi dal contesto (\textit{context-free}), mentre le espressioni regolari possono descrivere
+   unicamente linguaggi regolari \cite{aho2006compilers}. Una regex semplicistica 
+   (come \verb|\w+\s*$[^)]*$\s*{[^}]*}|) è ingrado di catturare solo metodi piatti, 
+   fallendo inesorabilmente di fronte al primo blocco condizionale annidato. Storicamente,
+   la prima iterazione architetturale (v1) di \texttt{HybridRepair} tentava di arginare questa 
+   limitazione combinando l'uso di regex con contatori manuali di parentesi graffe (\texttt{\_count\_braces()}). 
+   Tuttavia, questo approccio euristico scatenava il cosiddetto ``problema P1'':la generazione di patch contenenti 
+   parentesi sbilanciate o dichiarazioni di metodi frammentate o duplicate, costringendo il sistema a scartare un 
+   elevato numero di tentativi validi.
+
+\paragraph{Il fallimento dei diff unificati nei sistemi multi-tentativo}
+Il formato \textit{unidiff} (standardizzato in strumenti come \texttt{git diff} e adottato 
+da vecchi sistemi APR) codifica una modifica definendo un blocco testuale (l'\textit{hunk}) 
+ancorato a specifiche righe di contesto preesistenti. Questo modello si fonda su un'assunzione
+ di immutabilità del contesto: le righe circostanti la modifica devono coincidere in modo esatto
+  con quelle del file bersaglio. In un agente iterativo guidato da un LLM, questa assunzione crolla miseramente. 
+  L'agente esplora molteplici variazioni, e i diff generati dal modello spesso fanno riferimento al codice 
+  sorgente fallato originale (fornito nel prompt iniziale). Tuttavia, al procedere dei round esplorativi,
+  il file bersaglio può accumulare piccole variazioni o trovarsi in uno stato transitorio alterato. 
+  Il disallineamento posizionale che ne consegue causa il rigetto del diff in fase di applicazione, 
+  scaturendo in un falso negativo: la logica della patch potrebbe essere brillante e corretta, ma il 
+  suo veicolo testuale (il diff) ne impedisce la materializzazione \cite{jimenez2024sweagent, xia2023chatrepair}.
+
+  \paragraph{Il fallimento dei mutanti e l'overfitting}L'ultimo approccio tradizionale è quello basato sui 
+  mutanti. Questi sistemi alterano l'AST manipolando schemi predefiniti 
+  (operatori di mutazione), ad esempio forzando una condizione a \texttt{true}, sostituendo un operatore relazionale
+   o inserendo controlli di nullità (\textit{null-checks}). Questa strategia soffre di un doppio limite. 
+   In primo luogo, lo spazio esplorativo è confinato al ristretto set degli operatori implementati: se la 
+   risoluzione del bug richiede la stesura di un'istruzione logica non codificata da un mutante predefinito, 
+   la riparazione è matematicamente impossibile. In secondo luogo, e in maniera ancora più grave, i mutanti 
+   inducono un massiccio \textit{overfitting} (sovradattamento). Le mutazioni casuali tendono a generare 
+   patch che bypassano il caso di test fallito in modo parziale o accidentale, alterando o degradando 
+   silenziosamente comportamenti del programma per input non coperti dai test. Ricerche empiriche dimostrano 
+   che il tasso di \textit{overfitting} per alcuni di questi sistemi può superare il 90\% delle patch giudicate plausibili \cite{qi2015analysis, huang2024evolving}.
+
+\subsubsection{Introduzione a Tree-sitter: il Parser Incrementale ad Alta Fedeltà}
+\label{subsubsec:3.4.5.2}
+Per superare le fragilità  degli approcci testuali,
+\texttt{HybridRepair} adotta Tree-sitter, una libreria di parsing incrementale
+e open-source sviluppata originariamente da GitHub. A differenza
+dei parser canonici integrati nei compilatori Java (come
+l'infrastruttura ECJ o \texttt{javac}), Tree-sitter è spinto da
+una grammatica GLR (\textit{Generalized Left-to-Right Rightmost}).
+
+Il vantaggio predominante di un parser GLR risiede
+nella sua resilienza. Nei tradizionali parser di classe
+LL(k) o LR(k), l'incontro di una deviazione sintattica
+innesca un errore fatale, causando l'interruzione immediata dell'analisi
+e la distruzione dell'albero parziale. Tree-sitter, invece, gestisce
+le anomalie sintattiche incapsulandole all'interno di speciali nodi
+\texttt{ERROR} nel suo albero, portando a termine il
+parsing dell'intero documento. Questa capacità è di importanza
+critica nel dominio dell'APR, ove il file sorgente
+sottoposto ad analisi è, per definizione, difettoso e
+potrebbe già presentare lievi imperfezioni sintattiche.
+
+Dal punto di vista dell'ingegneria del software, l'integrazione
+della libreria nativa (scritta in C) nell'ecosistema Python
+di \texttt{HybridRepair} richiede una specifica gestione delle risorse.
+Per abbattere il costo computazionale, il modulo implementa
+un pattern architetturale noto come \textit{singleton lazy}. Di
+seguito il frammento di codice Python incaricato di
+questa orchestrazione:
+
+\begin{lstlisting}[language=Python, label={lst:ensure_tree_sitter}]
+def _ensure_tree_sitter():
+    """Inizializzazione lazy del parser Tree-sitter come singleton."""
+    global _TS_AVAILABLE, _JAVA_LANGUAGE, _PARSER
+    
+    if not _TS_AVAILABLE:
+        from tree_sitter import Language, Parser
+        import tree_sitter_java
+        
+        # Caricamento della grammatica compilata nativa
+        _JAVA_LANGUAGE = Language(tree_sitter_java.language(), 'java')
+        _PARSER = Parser()
+        _PARSER.set_language(_JAVA_LANGUAGE)
+        _TS_AVAILABLE = True
+        
+    return _PARSER
+\end{lstlisting}
+
+Il design pattern \textit{lazy singleton} interviene su un
+collo di bottiglia fondamentale: l'inizializzazione da zero di
+Tree-sitter (che prevede il caricamento a runtime della
+grammatica pre-compilata tramite binding C) consuma svariate decine
+di millisecondi. Al contrario, l'atto di analizzare e
+derivare l'albero di un file (il parsing incrementale)
+è estremamente reattivo e richiede solo una manciata
+di millisecondi. Ritardando l'istanza al momento del primo
+utilizzo e condividendo l'oggetto globale \texttt{\_PARSER} in memoria
+per tutte le operazioni successive, il sistema previene
+ritardi latenti deleteri durante l'esecuzione batch della suite
+di riparazione. Il binding Python espone un puntatore
+nativo, avvolto nell'oggetto \texttt{Language}, istruendo il parser a
+operare secondo il dialetto specifico di Java.
+
+\subsubsection{La Distinzione Cruciale: AST del Compilatore vs CST di Tree-sitter}
+\label{subsubsec:3.4.5.3}
+Un errore accademico comune è quello di interscambiare
+i concetti di AST e CST. Comprendere il
+salto qualitativo offerto da Tree-sitter richiede l'analisi della
+dicotomia profonda tra l'astrazione semantica (AST) e la
+fedeltà lessicale (CST).
+
+\paragraph{L'Astrazione Semantica dell'AST del Compilatore}
+Quando un compilatore convenzionale come \texttt{javac} ispeziona il
+codice, il suo obiettivo ultimo è tradurre le
+istruzioni in bytecode efficiente. Ne consegue che la
+sua struttura ad albero, l'AST (\textit{Abstract Syntax Tree}),
+si libera aggressivamente di tutti gli elementi superflui
+che non impattano l'esecuzione del programma. Un AST
+omette del tutto i commenti (siano essi \textit{block}
+o \textit{line-comment}), ignora gli spazi bianchi e l'indentazione
+visiva, rimuove il bilanciamento ridondante delle parentesi algebriche,
+astrae i punti e virgola, e normalizza i
+tipi letterali. Mentre questa spietata astrazione è inestimabile
+per la compilazione, si rivela distruttiva per l'ingegneria
+del software orientata alle patch. Se un agente
+modificasse un nodo su un AST compilativo puro
+e in seguito ritraducesse l'intero albero in codice
+sorgente (processo di \textit{pretty-printing} o \textit{unparsing}), l'intero file
+verrebbe ricostruito. Questa ricostruzione disgregherebbe irrimediabilmente l'indentazione e
+lo stile originari adottati dagli ingegneri, riversando
+modifiche estetiche su centinaia di righe non pertinenti
+e rendendo impossibile la validazione del diff.
+
+\paragraph{La Fedeltà Lessicale del CST di Tree-sitter}
+In totale contrapposizione, Tree-sitter orchestra un Concrete Syntax
+Tree (CST). Questa struttura non scarta nulla, vantando
+una fedeltà lessicale \textit{pixel-perfect}. Ogni singolo commento, carattere
+di spaziatura invisibile, ritorno a capo, annotazione e
+parentesi trova il suo posto come nodo fisico
+nell'albero. Il pregio definitivo del CST si
+materializza negli attributi di posizionamento: ogni nodo trasporta
+con sé uno \texttt{start\_byte} e un \texttt{end\_byte}, che
+indicano gli offset precisi al byte all'interno del
+flusso del file originale.
+
+La rappresentazione ad albero sottostante illustra un frammento
+minimale del CST restituito da Tree-sitter per una
+dichiarazione di metodo Java:
+
+\begin{verbatim}
+method_declaration [byte: 0..46]
+  modifiers: modifiers [byte: 0..6]
+    public [byte: 0..6]
+  type: void_type [byte: 7..11]
+  name: identifier [byte: 12..16] "test"
+  parameters: formal_parameters [byte: 16..18]
+    ( [byte: 16..17]
+    ) [byte: 17..18]
+  body: block [byte: 19..46]
+    { [byte: 19..20]
+      ...
+    } [byte: 45..46]
+\end{verbatim}
+
+Grazie agli indici di ancoraggio (es. \texttt{[byte: 0..46]}),
+il sistema \texttt{HybridRepair} può estrarre, rimpiazzare o iniettare
+blocchi logici operando unicamente in aritmetica sui byte,
+con la certezza assoluta che lo \textit{slice} prelevato
+in \texttt{source[node.start\_byte:node.end\_byte]} rappresenterà infallibilmente il testo fedele per
+come è stato redatto nel sorgente originale, inclusivo
+di tabulazioni e punteggiatura.
+
+\subsubsection{Il Vocabolario dei Nodi Tree-sitter per Java}
+\label{subsubsec:3.4.5.4}
+La grammatica formale di \texttt{tree-sitter-java} è notevolmente vasta
+e conta oltre 100 tipologie differenti di nodi
+per descrivere ogni sfumatura del linguaggio. Nelle procedure
+di sostituzione e astrazione intraprese da \texttt{HybridRepair}, vengono
+selezionati in modo prevalente nodi in grado di
+fornire i confini per le macro-strutture del codice.
+Di seguito è riportata una tabella riassuntiva dei
+principali nodi rilevanti:
+
+\begin{table}[H]
+\centering
+\label{tab:treesitter_nodes}
+\resizebox{\textwidth}{!}{
+\begin{tabular}{l l l}
+\toprule
+\textbf{Tipo nodo} & \textbf{Descrizione} & \textbf{Campo figlio rilevante} \\
+\midrule
+\texttt{method\_declaration} & Dichiarazione di metodo & \texttt{name} (\texttt{identifier}), \texttt{body} (\texttt{block}) \\
+\texttt{constructor\_declaration} & Dichiarazione di costruttore & \texttt{name} (\texttt{identifier}), \texttt{body} (\texttt{block}) \\
+\texttt{field\_declaration} & Campo di classe & \texttt{type}, \texttt{declarator} \\
+\texttt{local\_variable\_declaration} & Variabile locale & \texttt{type}, \texttt{declarator} \\
+\texttt{formal\_parameter} & Parametro formale di metodo & \texttt{type}, \texttt{name} \\
+\texttt{class\_declaration} & Dichiarazione di classe & \texttt{name}, \texttt{body} \\
+\texttt{block} & Blocco di istruzioni & child nodes \\
+\texttt{identifier} & Identificatore testuale Java & (testo del nodo) \\
+\bottomrule
+\end{tabular}
+}
+\end{table}
+
+Questi nodi costituiscono il vocabolario attraverso cui il
+sistema si orienta all'interno del file. A titolo
+puramente illustrativo del modo in cui questi costrutti
+informativi vengono impiegati dalla logica di riparazione di
+\texttt{ast\_applier.py}, il seguente frammento espone l'approccio standard di
+ispezione iterativa (tramite esplorazione a profondità DFS) per
+localizzare il nodo esatto di un metodo target:
+
+\begin{lstlisting}[language=Python, label={lst:find_method_by_name_intro}]
+def _find_method_by_name(root_node, target_name):
+    """Ricerca iterativa DFS del metodo target all'interno del CST."""
+    stack = [root_node]
+    
+    while stack:
+        node = stack.pop()
+        
+        # Intercettazione dichiarazioni di metodo o costruttore
+        if node.type in ['method_declaration', 'constructor_declaration']:
+            # Estrazione sicura del figlio denominato 'name'
+            name_node = node.child_by_field_name('name')
+            if name_node and name_node.text.decode('utf8') == target_name:
+                return node
+                
+        # Aggiunta iterativa dei figli (in ordine decrescente 
+        # per emulare una corretta visita left-to-right)
+        for child in reversed(node.children):
+            stack.append(child)
+            
+    return None
+\end{lstlisting}
+
+In questo breve passaggio algoritmico, il sistema naviga
+fluidamente la gerarchia del CST, ispezionando unicamente i
+nodi del tipo \texttt{method\_declaration} e \texttt{constructor\_dec\\laration} estratti dal
+vocabolario, estraendo dal campo nominativo \texttt{name} (che corrisponde
+all'\texttt{identifier} del metodo) il testo per il confronto
+e ottenendo, infine, il nodo risolto portatore dei
+corretti \textit{byte offset} su cui l'agente applicherà la
+propria manipolazione strutturale.
+\newpage
+\subsection{Precisione Chirurgica e Modifiche Posizionali}
+\label{subsec:3.4.6}
+Il modulo \texttt{patch\_agent/ast\_applier.py} implementa il meccanismo centrale della
+riparazione strutturale all'interno dell'ecosistema \texttt{HybridRepair}. La sua funzione
+principale, \texttt{apply\_method\_replacement()}, ha il compito di concretizzare la
+sostituzione posizionalmente precisa di un metodo nel sorgente Java.
+Questa delicata operazione si articola in tre passaggi sequenziali:
+il parsing del file attraverso Tree-sitter, la localizzazione inequivocabile
+del nodo corrispondente al metodo target, e infine la
+sostituzione del relativo span di testo. 
+
+\subsubsection{L'Inizializzazione Lazy del Parser: \texttt{\_ensure\_tree\_sitter()}}
+\label{subsubsec:3.4.6.1}
+Il primo passo per poter operare sul codice è
+l'istanza del parser. Come precedentemente introdotto, l'inizializzazione della libreria
+avviene tramite la funzione \texttt{\_ensure\_tree\_s\\itter()}. Questa funzione non è
+isolata, ma è condivisa in modo architetturalmente trasversale tra
+i moduli \texttt{ast\_applier.py} (responsabile della riparazione) e \texttt{prolog\_groundi\\ng.py} (che
+se ne avvale per la risoluzione dei tipi durante
+la fase di \textit{grounding}). La condivisione sicura del singleton
+del parser si basa sulle proprietà del sistema di
+import di Python: le variabili globali del modulo, venendo
+caricate una sola volta per processo, garantiscono che l'istanza
+di Tree-sitter sia unica e condivisa in memoria tra
+tutti gli importatori, abbattendo drasticamente i tempi di esecuzione
+globale.
+
+\subsubsection{La Funzione di Parsing: \texttt{\_parse\_java()}}
+\label{subsubsec:3.4.6.2}
+Una volta ottenuto il parser, il testo sorgente deve
+essere analizzato per generare il \textit{Concrete Syntax Tree} (CST).
+Questa operazione è delegata alla funzione \texttt{\_parse\_java()}, la quale
+introduce un passaggio di codifica di fondamentale importanza:
+
+\begin{lstlisting}[language=Python, label={lst:parse_java}]
+def _parse_java(source_code: str):
+    """Esegue il parsing del codice sorgente gestendo rigorosamente i byte."""
+    parser = _ensure_tree_sitter()
+    
+    # Passaggio critico: codifica in bytes UTF-8
+    source_bytes = source_code.encode('utf-8')
+    
+    # Generazione dell'albero sintattico
+    tree = parser.parse(source_bytes)
+    
+    return tree, source_bytes
+\end{lstlisting}
+
+Il dettaglio implementativo critico visibile in questa funzione è
+l'esplicita conversione della stringa Python in una sequenza di
+byte tramite la codifica UTF-8 (\texttt{source\_code.en\\code('utf-8')}) prima di
+invocare \texttt{parser.parse()}. Questa necessità deriva dall'architettura interna di
+Tree-sitter, il quale opera esclusivamente nello spazio dei byte.
+Di conseguenza, gli attributi posizionali restituiti dai nodi (come
+\texttt{start\_byte} ed \texttt{end\_byte}) rappresentano offset in byte all'interno del
+buffer codificato, non offset in caratteri Unicode. Mentre per
+i file Java che contengono unicamente caratteri ASCII il
+\textit{byte offset} e il \textit{character offset} coincidono perfettamente, la
+situazione cambia radicalmente in presenza di stringhe o commenti
+in lingue non-ASCII. Nei progetti internazionali, inclusi diversi applicativi
+del dataset Defects4J sviluppati in Europa o in Asia,
+l'utilizzo accidentale di \textit{character offset} provocherebbe disallineamenti silenti ma
+letali durante la manipolazione, corrompendo la patch. Pertanto, operare
+al livello dei byte UTF-8 è essenziale per la
+sicurezza e la precisione dell'intero processo.
+
+\subsubsection{La Strategia di Sostituzione via AST: \texttt{\_replace\_via\_ast()}}
+\label{subsubsec:3.4.6.3}
+Questa sezione descrive il cuore nevralgico del meccanismo di
+riparazione strutturale. Una volta che il parser ha identificato
+le coordinate esatte del metodo all'interno dell'albero, la sostituzione
+fisica del codice viene eseguita dalla funzione \texttt{\_replace\_via\_ast()},
+il cui codice è riportato di seguito:
+
+\begin{lstlisting}[language=Python, label={lst:replace_via_ast}]
+def _replace_via_ast(source_bytes: bytes, method_node, new_body_indented: str) -> bytes:
+    """Esegue la sostituzione chirurgica sfruttando gli offset di Tree-sitter."""
+    
+    # Estrazione degli offset posizionali dal nodo
+    start_byte = method_node.start_byte
+    end_byte = method_node.end_byte
+    
+    # Codifica della patch generata dall'LLM
+    new_body_bytes = new_body_indented.encode('utf-8')
+    
+    # Slicing posizionale e concatenazione
+    patched_bytes = source_bytes[:start_byte] + new_body_bytes + source_bytes[end_byte:]
+    
+    return patched_bytes
+\end{lstlisting}
+
+La robustezza di questa funzione risiedono
+nell'operazione di slicing e concatenazione \texttt{source\_bytes[:start\_byte] + new\_body\_bytes + source\_bytes[end\_byte:]}.
+Analizziamo riga per riga la semantica di questa espressione:
+
+\begin{description}
+    \item[\texttt{source\_bytes[:start\_byte]}:] Questa porzione estrae in modo sicuro tutto il
+    codice sorgente originale che precede esattamente il primo byte
+    del metodo da sostituire, conservando intatti package, import, dichiarazioni
+    di classe e metodi precedenti.
+    
+    \item[\texttt{new\_body\_bytes}:] Questa è la nuova implementazione corretta del metodo,
+    generata dall'agente LLM e precedentemente re-indentata e codificata in
+    UTF-8.
+    
+    \item[\texttt{source\_bytes[end\_byte:]}:] Questa istruzione recupera dal buffer originario tutto ciò
+    che segue l'ultimo byte del metodo bersaglio (inclusa la
+    parentesi graffa di chiusura della classe o i metodi
+    successivi), completando il file.
+\end{description}
+
+L'affidabilità inossidabile di questa operazione è garantita da una
+proprietà fondamentale di Tree-sitter: gli attributi \texttt{start\_byte} ed \texttt{end\_byte}
+delineano in maniera assolutamente esatta e priva di ambiguità
+posizionale l'intervallo del file sorgente originale di competenza del
+nodo. Da questa meccanica deriva un teorema pratico di
+correttezza sintattica per costruzione. La proprietà formale asserisce che:
+se il file \texttt{source\_bytes} originale è sintatticamente valido, se
+\texttt{new\_body\_indented} è a sua volta un metodo sintatticamente valido
+con il medesimo identificatore, e se \texttt{method\_node} inquadra correttamente
+le coordinate nel CST, allora l'output \texttt{patched\_bytes} risultante è
+matematicamente garantito essere un file Java sintatticamente integro. A
+differenza degli approcci testuali basati su diff o regex,
+dove la validità del risultato è precaria e dipendente
+dalla forma esteriore del testo, qui la correttezza non
+è una scommessa statistica, ma una conseguenza diretta della
+struttura formale della manipolazione posizionale. Eventuali errori logici o
+semantici residui nella patch verranno poi demandati e intercettati
+dal compilatore nella successiva fase \texttt{COMPILE}.
+
+\subsubsection{Il Rilevamento del Metodo Target: \texttt{\_find\_method\_by\_name()}}
+\label{subsubsec:3.4.6.4}
+Per poter alimentare la funzione di sostituzione posizionale con
+il nodo corretto, il sistema deve prima localizzarlo all'interno
+del CST. Questa ricerca è implementata dalla funzione \texttt{\_find\_method\_by\_name()},
+che incorpora una logica complessa per gestire gerarchie profonde
+e risolvere ambiguità:
+
+\begin{lstlisting}[language=Python, label={lst:find_method_advanced}]
+def _find_method_by_name(root_node, target_name: str, target_line: int = None):
+    """Ricerca iterativa DFS del metodo target con disambiguazione degli overload."""
+    stack = [root_node]
+    candidate_nodes = []
+    
+    while stack:
+        node = stack.pop()
+        
+        # Identificazione di metodi o costruttori
+        if node.type in ['method_declaration', 'constructor_declaration']:
+            name_node = node.child_by_field_name('name')
+            if name_node and name_node.text.decode('utf-8') == target_name:
+                candidate_nodes.append(node)
+                
+        # Inserimento inverso dei figli per preservare la visita left-to-right
+        for child in reversed(node.children):
+            stack.append(child)
+            
+    # Disambiguazione in presenza di overload multipli
+    if target_line is not None and len(candidate_nodes) > 1:
+        for node in candidate_nodes:
+            # Tree-sitter restituisce righe zero-indexed, aggiungiamo 1
+            start_row = node.start_point + 1
+            end_row = node.end_point + 1
+            
+            # Verifica se la linea difettosa ricade nei confini del metodo
+            if start_row <= target_line <= end_row:
+                return node
+                
+    return candidate_nodes if candidate_nodes else None
+\end{lstlisting}
+
+Ingegneristicamente, due aspetti di questa implementazione spiccano per importanza.
+In primo luogo, l'esplorazione del CST avviene tramite un
+algoritmo \textit{Depth-First Search} (DFS) rigorosamente iterativo, supportato da uno
+stack esplicito, ripudiando il più canonico approccio ricorsivo. Questa
+è una scelta mirata alla robustezza strutturale, resa necessaria
+dalle caratteristiche dei file Java di livello \textit{enterprise}. Nei
+progetti industriali, l'annidamento sintattico può raggiungere profondità estreme (ad
+esempio, a causa di classi anonime intrecciate con blocchi
+\texttt{try/catch/finally} e iterazioni annidate). Un DFS ricorsivo rischierebbe di
+superare rapidamente il limite prefissato dello stack di chiamate
+del runtime Python (tipicamente limitato a 1000 frame), scatenando
+un fatale \texttt{RecursionError}. Lo stack iterativo, gestito dinamicamente nell'heap
+di memoria, immunizza l'algoritmo da questa specifica vulnerabilità.
+
+In secondo luogo, la funzione implementa un meccanismo
+di disambiguazione guidato dal parametro \texttt{target\_line}. Nel vasto ecosistema
+di Defects4J, classi cardine come \texttt{DatasetUtilities} (nel progetto JFreeChart)
+o \texttt{StringUtils} (in Apache Commons Lang) presentano frequentemente dozzine
+di metodi sovraccaricati (\textit{overload}), recanti il medesimo nome identificativo
+ma differenti firme e comportamenti. Se il sistema rintracciasse
+semplicemente il nome (ottenendo molteplici nodi candidati in \texttt{candidate\_nodes}),
+si affiderebbe al caso applicando la patch al primo
+della lista. Ricevendo la \texttt{target\_line}, che il \texttt{PatchAgent}
+propaga attingendo alle informazioni di \texttt{FaultLocation} presenti nel \texttt{FaultReport},
+ l'algoritmo confronta questa coordinata con il \textit{bounding box}
+di ogni metodo candidato (\texttt{start\_point} ed \texttt{end\_point}). Solo il
+nodo che abbraccia fisicamente la riga difettosa viene selezionato,
+risolvendo in modo univoco l'ambiguità degli overload
+multipli.
+
+\subsubsection{La Preservazione dell'Indentazione: \texttt{\_detect\_indentation()} e \texttt{\_reindent()}}
+\label{subsubsec:3.4.6.5}
+La preservazione dello stile di indentazione originale del codice
+ costituisce un
+requisito funzionale critico per la correttezza pratica del sistema.
+Se il \texttt{PatchAgent} iniettasse un metodo generato dall'LLM con
+un'indentazione discorde rispetto a quella del file target, il
+sistema produrrebbe un diff ``inquinato'', in cui ogni singola
+riga del metodo risulterebbe modificata a causa delle discrepanze
+negli spazi bianchi, e non solo le righe che
+hanno effettivamente subito un'alterazione logica. Questo disallineamento renderebbe la
+patch estremamente difficile da revisionare per un operatore umano
+e aumenterebbe drasticamente la probabilità di introdurre \textit{whitespace-related compilation
+errors}, specialmente in sistemi di \textit{Continuous Integration} (CI) che
+impongono regole di stile stringenti (come Checkstyle).
+
+Per scongiurare questo problema, il sistema implementa due funzioni
+dedicate: \texttt{\_detect\_\\indentation()} per campionare lo stile originario e \texttt{\_reindent()}
+per applicarlo dinamicamente al codice generato.
+
+\begin{lstlisting}[language=Python, label={lst:detect_indentation}]
+def _detect_indentation(source_code: str) -> str:
+    """Rileva l'indentazione del prefisso della prima riga utile."""
+    first_line = source_code.split('\n')[0]
+    # Estrazione del prefisso composto esclusivamente da spazi o tab
+    indentation_len = len(first_line) - len(first_line.lstrip())
+    return first_line[:indentation_len]
+\end{lstlisting}
+
+La funzione \texttt{\_detect\_indentation()} si occupa di estrarre il prefisso
+esatto (spazi bianchi ASCII o tabulazioni) della prima riga
+del metodo originale nel file target. Nel dataset Defects4J,
+le convenzioni stilistiche presentano un'elevata variabilità: progetti come JFreeChart
+adottano rigorosamente 4 spazi, alcuni sottoprogetti di Apache Commons
+privilegiano le tabulazioni, mentre Closure Compiler impiega tipicamente 2
+spazi. Il rilevamento dinamico svincola il sistema dalla necessità
+di conoscere a priori le policy del progetto bersaglio.
+
+Una volta estratto il prefisso, il codice sostitutivo fornito
+dall'agente deve essere riallineato tramite \texttt{\_reindent()}:
+
+\begin{lstlisting}[language=Python, label={lst:reindent}]
+def _reindent(new_body: str, target_indent: str) -> str:
+    """Applica una trasformazione di indentazione relativa al nuovo corpo del metodo."""
+    lines = new_body.split('\n')
+    if not lines:
+        return new_body
+        
+    # Calcolo dell'indentazione base (livello esterno) del codice LLM
+    base_indent_len = len(lines[0]) - len(lines[0].lstrip())
+    base_indent = lines[0][:base_indent_len]
+    
+    reindented_lines = []
+    for line in lines:
+        # Gestione esplicita delle righe vuote
+        if not line.strip():
+            reindented_lines.append("")
+            continue
+            
+        # Trasformazione relativa: sostituisce l'indentazione base con quella target
+        if line.startswith(base_indent):
+            reindented_lines.append(target_indent + line[base_indent_len:])
+        else:
+            reindented_lines.append(target_indent + line.lstrip())
+            
+    return '\n'.join(reindented_lines)
+\end{lstlisting}
+
+Un aspetto fondamentale è la differenza tra un'imposizione
+di indentazione assoluta e la trasformazione di indentazione relativa
+qui implementata. Un approccio assoluto appiattirebbe forzatamente ogni riga
+a un margine fisso, distruggendo la struttura visiva del
+codice. L'algoritmo relativo, invece, calcola il delta tra l'indentazione
+esterna del codice generato dall'LLM e il \texttt{target\_indent} prelevato
+dal file fisico; questa differenza viene poi applicata uniformemente
+a ogni riga. In questo modo, l'indentazione interna del
+metodo, ovvero i delicati livelli di annidamento relativi
+di blocchi \texttt{if}, cicli \texttt{for} e costrutti \texttt{try/catch},
+viene perfettamente preservata, traslando semplicemente l'intero blocco logico al
+livello di rientro corretto del file ospite. Da notare
+anche la gestione esplicita delle righe vuote (\texttt{if not line.strip()}).
+Questa riga di codice è necessaria per preservare intatte
+le spaziature verticali di separazione logica introdotte all'interno del
+metodo, che nei linguaggi ad alta leggibilità come Java
+costituiscono convenzioni visive fondamentali per la manutenibilità.
+
+\subsubsection{Il Calcolo del Diff Unificato}
+\label{subsubsec:3.4.6.6}
+Sebbene il sistema abbia definitivamente abbandonato i diff come
+veicolo per applicare la modifica, il formato \textit{unidiff} mantiene
+un ruolo di primaria importanza a livello diagnostico.
+
+\begin{lstlisting}[language=Python, label={lst:compute_diff}]
+def _compute_diff(original: str, patched: str, filename: str) -> str:
+    """Genera un diff unificato diagnostico post-applicazione."""
+    import difflib
+    
+    original_lines = original.splitlines(keepends=True)
+    patched_lines = patched.splitlines(keepends=True)
+    
+    # Parametro n=3 per rispettare lo standard delle righe di contesto
+    diff = difflib.unified_diff(
+        original_lines, patched_lines,
+        fromfile=filename, tofile=filename, n=3
+    )
+    return "".join(diff)
+\end{lstlisting}
+
+La funzione \texttt{\_compute\_diff()} viene rigorosamente invocata solo dopo l'applicazione
+della patch tramite Tree-sitter, assumendo un valore puramente diagnostico
+e visivo per il modello linguistico. Il risultato non
+viene mai utilizzato per alterare il file sorgente; al
+contrario, viene formattato e restituito all'agente LLM come feedback
+di conferma (\texttt{"[SUCCESS] Patch applied successfully ... Diff: ..."})
+per permettergli di validare visivamente l'impatto della sua azione.
+Il parametro \texttt{n=3} ricalca deliberatamente la convenzione standard di
+\texttt{git diff} per le righe di contesto: valori superiori
+aumenterebbero la leggibilità a uso umano, ma si tradurrebbero
+in stringhe troppo verbose che consumerebbero inutilmente il budget
+di token contestuali (\textit{token budget}) della finestra di memoria
+dell'LLM.
+
+\subsubsection{La Strategia di Fallback Graduale}
+\label{subsubsec:3.4.6.7}
+L'orchestrazione finale del processo di sostituzione strutturale è racchiusa
+nel metodo \texttt{apply\_method\_replacement()}. Questa funzione si fa carico di
+integrare il parsing, l'indentazione, la manipolazione dell'AST e la
+generazione del diff in un'unica interfaccia robusta per il
+\texttt{PatchAgent}.
+
+Per garantire la massima resilienza, specialmente considerando l'eterogeneità di
+ambienti in cui il software potrebbe essere eseguito, il
+metodo implementa una strategia di fallback graduale a
+due livelli:
+
+\newpage
+\begin{lstlisting}[language=Python, label={lst:apply_method_replacement}]
+def apply_method_replacement(file_path: Path, method_name: str, new_body: str, target_line: int = None) -> tuple[bool, str]:
+    """Applica la sostituzione del metodo tramite una strategia di fallback graduale."""
+    original_source = file_path.read_text(encoding='utf-8')
+    
+    # 1. Preservazione stile
+    target_indent = _detect_indentation(original_source)
+    new_body_indented = _reindent(new_body, target_indent)
+    
+    # 2. LIVELLO PRIMARIO: Manipolazione AST via Tree-sitter
+    try:
+        tree, source_bytes = _parse_java(original_source)
+        method_node = _find_method_by_name(tree.root_node, method_name, target_line)
+        
+        if method_node:
+            patched_bytes = _replace_via_ast(source_bytes, method_node, new_body_indented)
+            patched_source = patched_bytes.decode('utf-8')
+            
+            file_path.write_text(patched_source, encoding='utf-8')
+            diff = _compute_diff(original_source, patched_source, file_path.name)
+            return True, f"[SUCCESS] Patch applied successfully.\nDiff:\n{diff}"
+    except Exception as e:
+        # Errore non fatale, si procede al livello di fallback
+        pass
+
+    # 3. LIVELLO SECONDARIO: Fallback Regex
+    try:
+        # L'approccio regex richiede obbligatoriamente il target_line
+        patched_source = _apply_regex_fallback(original_source, method_name, new_body_indented, target_line)
+        
+        if patched_source:
+            file_path.write_text(patched_source, encoding='utf-8')
+            diff = _compute_diff(original_source, patched_source, file_path.name)
+            return True, f"[WARNING] Patch applied via Regex fallback.\nDiff:\n{diff}"
+    except Exception as e:
+        pass
+        
+    # 4. LIVELLO FINALE: Fallimento Graceful
+    return False, "[FAILED] Failed to apply patch: method boundaries not found or parsing failed."
+\end{lstlisting}
+
+Questa ridondanza architetturale definisce un ordine di priorità strettamente
+decrescente in termini di affidabilità. Il Livello Primario tenta
+sistematicamente la sostituzione via Tree-sitter AST, che garantisce la
+correttezza sintattica per costruzione, la gestione nativa degli overload
+e la compatibilità con annotazioni e gerarchie di annidamento
+arbitrarie. Qualora il parsing dovesse fallire (circostanza rara, ma
+possibile in caso di file sorgente severamente corrotto in
+partenza) o l'infrastruttura binaria nativa in C della libreria
+\texttt{tree-sitter-java} non risultasse accessibile nel sistema operativo in uso,
+subentra il Livello Secondario. Questo si affida a un
+approccio basato su espressioni regolari Il fallback regex opera
+solo su file Java standard, richiede obbligatoriamente il parametro
+\texttt{target\_line} e, seppur soggetto al rischio potenziale di sbilanciare
+parentesi in metodi altamente complessi, offre una via di
+fuga operazionale vitale in ambienti non standardizzati privi di
+dipendenze binarie. 
+
+Se anche l'estrazione testuale fallisce clamorosamente, il sistema invoca
+il Fallimento Graceful. Invece di interrompere brutalmente l'esecuzione sollevando
+un'eccezione non gestita a livello di thread che causerebbe
+il crash dell'agente, il sistema restituisce in modo sicuro
+una tupla di errore testuale. Questo messaggio negativo viene
+iniettato nel contesto dell'LLM; l'agente riceve notifica del fallimento
+materiale e può optare, nel round successivo, per un
+approccio logico differente o fornire indizi addizionali per aiutare
+il parser. Questa \textit{graceful degradation} è un principio cardine
+dell'intera architettura, risultando imprescindibile per un sistema APR automatizzato
+chiamato a processare batch massivi e ininterrotti di bug
+profondamente eterogenei.
+
+\subsection{Il Sandbox di Valutazione: \texttt{sandbox\_evaluator.py}}
+\label{subsec:3.4.7}
+Il modulo \texttt{services/sandbox\_evaluator.py} implementa il sandbox di valutazione,
+l'ambiente isolato che fornisce all'agente i due oracoli deterministici
+necessari per il ciclo della Macchina a Stati Finiti:
+il compilatore Java (\texttt{javac}) e il framework di esecuzione
+dei test (\texttt{org.junit.runner.JUnitCore}). In ambito di ingegneria del software
+orientata alla sicurezza, il termine ``sandbox'' denota un rigoroso
+isolamento operativo. Ogni singolo tentativo di riparazione agisce su
+una copia fisica separata del codice sorgente, confinata in
+una directory dedicata, per garantire che i fallimenti e
+le mutazioni di un tentativo non inquinino lo stato
+dei successivi, mantenendoli reciprocamente indipendenti.
+
+\subsubsection{La Gestione del Classpath: \texttt{config.properties} e Glob Expansion}
+\label{subsubsec:3.4.7.1}
+Prima di poter compilare o eseguire il codice Java,
+l'ambiente necessita di una corretta risoluzione delle dipendenze. Nel
+dataset Defects4J, questa configurazione è memorizzata all'interno di un
+file specifico, \texttt{config.properties}, presente nella directory radice di ogni
+bug. L'estrazione e la risoluzione di questo classpath avvengono
+tramite la funzione \texttt{\_read\_classpath()}:
+
+\begin{lstlisting}[language=Python, label={lst:read_classpath}]
+def _read_classpath(bug_dir: Path) -> str:
+    """Estrae e risolve il classpath dal file config.properties."""
+    config_path = bug_dir / "config.properties"
+    
+    # Estrazione della riga contenente class.path
+    with open(config_path, 'r') as f:
+        for line in f:
+            if line.startswith("class.path="):
+                raw_paths = line.strip().split("=")[3].split(":")
+                break
+                
+    resolved_entries = []
+    for entry in raw_paths:
+        if '*' in entry:
+            # Meccanismo di glob expansion per le wildcard
+            base_dir = (bug_dir / entry).parent
+            for jar_file in base_dir.glob("*.jar"):
+                resolved_entries.append(str(jar_file.resolve()))
+        else:
+            # Risoluzione in percorso assoluto
+            resolved_entries.append(str((bug_dir / entry).resolve()))
+            
+    return ":".join(resolved_entries)
+\end{lstlisting}
+
+Il file \texttt{config.properties} definisce il classpath utilizzando percorsi relativi alla
+directory del bug, concatenandoli tipicamente in una forma del
+tipo \texttt{class.path=../../lib/j\\unit-4.11.jar:../../lib/hamcrest-core-1.3.jar:...}. La funzione si occupa di ancorare
+queste definizioni relative trasformandole in percorsi assoluti tramite l'invocazione
+di \texttt{(bug\_dir / entry).resolve()}. Un aspetto architetturale di vitale importanza
+è il supporto per la \textit{glob expansion}. Alcuni progetti
+non elencano minuziosamente ogni singolo archivio JAR, ma utilizzano
+sintassi con wildcard (come \texttt{../../lib/*}). Per intercettare questa notazione,
+il codice verifica la presenza del carattere \texttt{*} e
+innesca la libreria \texttt{glob}, iterando il filesystem per raccogliere
+dinamicamente tutti gli archivi \texttt{.jar} presenti nella directory. Questo
+meccanismo astratto assorbe con eleganza le marcate differenze strutturali
+nella gestione delle dipendenze dei vari repository che compongono
+Defects4J.
+
+\subsubsection{La Compilazione Selettiva dei File Modificati}
+\label{subsubsec:3.4.7.2}
+La verifica sintattica del codice modificato richiede l'uso del
+compilatore \texttt{javac}. Tuttavia, ricompilare un intero progetto enterprise (come
+JFreeChart o Closure Compiler) per ogni singolo tentativo della
+FSM richiederebbe interi minuti, rendendo proibitivi i tempi di
+esecuzione del sistema. Il sandbox supera questa limitazione implementando
+un approccio di compilazione selettiva:
+
+\begin{lstlisting}[language=Python, label={lst:compile_patched_source}]
+def _find_modified_files(original_dir: Path, patched_dir: Path) -> list[str]:
+    """Identifica i file Java modificati tramite confronto byte-a-byte."""
+    import filecmp
+    comparison = filecmp.dircmp(original_dir, patched_dir)
+    return [f for f in comparison.diff_files if f.endswith('.java')]
+
+def compile_patched_source(patched_dir: Path, bug_dir: Path, classpath: str):
+    """Compila selettivamente il file modificato tramite javac."""
+    import subprocess
+    
+    modified_files = _find_modified_files(bug_dir, patched_dir)
+    if not modified_files:
+        return True, ""
+        
+    target_file = patched_dir / modified_files[0]
+    
+    cmd = [
+        "javac",
+        "-cp", classpath,
+        "-sourcepath", str(patched_dir),
+        "-nowarn",
+        "-encoding", "UTF-8",
+        str(target_file)
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    return result.returncode == 0, result.stderr
+\end{lstlisting}
+
+La funzione sussidiaria \texttt{\_find\_modified\_files()} impiega il modulo \texttt{filecmp.dircmp()} per
+operare un confronto byte-a-byte tra la directory originale e
+il sandbox. Questa scelta è strategicamente superiore a un
+banale controllo dei timestamp: la copia dei file tra
+file system potrebbe inavvertitamente aggiornare i timestamp, innescando falsi
+positivi, mentre il confronto binario estrae infallibilmente il solo
+file che ha subito mutazioni da parte dell'LLM.
+
+Una volta isolato il file (es. \texttt{PatchedClass.java}), viene invocato
+il compilatore. Le opzioni passate a \texttt{javac} costituiscono il
+fulcro concettuale di questa procedura. Il flag \texttt{-sourcepath} è
+di importanza primordiale: esso istruisce il compilatore a risolvere
+i riferimenti a classi non specificate sulla riga di
+comando andandone a cercare i sorgenti all'interno della directory
+radice indicata. Grazie a questo parametro, \texttt{javac} può compilare
+unicamente la \texttt{PatchedClass.java} modificata, riuscendo contemporaneamente a risolvere i
+riferimenti incrociati alle altre classi dello stesso package, scongiurando
+i costi di una ricompilazione totale del progetto. Parimenti
+cruciale è l'inclusione del flag \texttt{-nowarn}. Il codice legacy
+abbonda di pratiche superate che generano avvisi (come \textit{deprecated
+method calls} o \textit{unchecked assignments} sui generici). Questi messaggi non
+indicano violazioni bloccanti e non interrompono la compilazione, ma,
+se passati all'agente LLM, inquinerebbero il prompt con rumore
+superfluo. Omettendoli, ci si assicura che il modello si
+concentri esclusivamente sui veri errori sintattici.
+\newpage
+\subsubsection{L'Esecuzione JUnit e il Parsing dell'Output}
+\label{subsubsec:3.4.7.3}
+L'oracolo semantico finale del ciclo di riparazione è demandato
+al collaudo della suite di test. Poiché il sistema
+opera in totale automazione e disaccoppiamento dagli IDE grafici,
+i test vengono innescati invocando \texttt{org.junit.runner.JUnitCore} in pura modalità
+\textit{command-line}:
+
+\begin{lstlisting}[language=Python,  label={lst:run_junit}]
+def _run_junit(patched_dir: Path, classpath: str, test_classes: list[str]):
+    """Esegue la suite JUnit in modalità command-line con limite temporale."""
+    import subprocess
+    
+    cmd = [
+        "java", 
+        "-cp", classpath, 
+        "org.junit.runner.JUnitCore"
+    ] + test_classes
+    
+    # Timeout di 300 secondi per prevenire stalli
+    return subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+\end{lstlisting}
+
+In questa esecuzione, il parametro \texttt{timeout=300} svolge il ruolo
+di scudo  contro un fenomeno  dell'Automated Program
+Repair: le modifiche introdotte dall'agente, specialmente su bug legati
+alla sincronizzazione multithreading o ai flussi di I/O, possono
+accidentalmente generare deadlock o loop infiniti (\textit{infinite loops}) all'interno
+dei test. Fissando un tempo limite di 5 minuti,
+si impone un vincolo di sicurezza che previene il
+blocco indefinito dell'intero processo di elaborazione batch.
+
+Il runner JUnit standard in modalità CLI non restituisce
+un log strutturato (come un XML), bensì riversa sullo
+standard output un report testuale grezzo. Questo output deve
+essere imperativamente analizzato per estrarre logiche diagnostiche avanzate. L'operazione
+è affidata alla funzione \texttt{\_parse\_junit\_output()}:
+
+\begin{lstlisting}[language=Python , label={lst:parse_junit_output}]
+def _parse_junit_output(output: str, original_failing_tests: set):
+    """Analizza l'output testuale JUnit ed estrae le metriche di progresso."""
+    import re
+    
+    # Estrazione delle firme tramite espressione regolare
+    failure_pattern = re.compile(r"\.E\s+([a-zA-Z0-9_]+)\(([a-zA-Z0-9_.]+)\)")
+    
+    current_failures = set()
+    for match in failure_pattern.finditer(output):
+        method_name, class_name = match.groups()
+        current_failures.add(f"{class_name}::{method_name}")
+        
+    previously_failing = original_failing_tests
+    still_failing = previously_failing.intersection(current_failures)
+    
+    # Metrica cruciale di parziale successo
+    previously_failing_now_passing = previously_failing - still_failing
+    
+    return {
+        "status": "PASS" if not current_failures and "OK (" in output else "TEST_FAIL",
+        "failures": list(current_failures),
+        "previously_failing_now_passing": list(previously_failing_now_passing)
+    }
+\end{lstlisting}
+
+L'algoritmo impiega un'espressione regolare (\verb|\.E\s+...|) per ispezionare
+il log testuale ed estrarre le firme esatte dei
+test falliti (scorporando il nome del metodo da quello
+della classe originaria). L'elenco ottenuto (\texttt{current\_failures}) viene incrociato dinamicamente
+con l'\texttt{original\_failing\_tests} (la mappa dei fallimenti pre-patch contenuta nel
+\texttt{FaultReport}) per ricavare l'attributo \texttt{previously\_failing\_now\_passing}. Il calcolo di questa
+metrica costituisce un apporto metodologico di straordinaria utilità. In
+molti frangenti di riparazione automatica complessa, una singola patch
+non riesce a far transitare tutti i test in
+stato verde simultaneamente. Misurare con esattezza quanti e quali
+test specifici abbiano invertito il loro stato da fallito
+a corretto (ad esempio, registrando 3 test passati su
+5) offre un indicatore di progresso.
+Esso segnala all'agente che la rotta esplorativa è parzialmente
+valida e promettente, fornendo un fondamentale indicatore direzionale pur
+in assenza del raggiungimento totale del criterio di successo
+formale.
+
+\subsection{Strutture Dati della Fase 3: \texttt{PatchAttempt} e \texttt{RepairResult}}
+\label{subsec:3.4.8}
+Il contratto di interfaccia e di output della Fase
+3 è rigorosamente formalizzato attraverso due strutture dati immutabili,
+definite come \texttt{@dataclass} all'interno del modulo \texttt{shared/models.py}. L'ingegnerizzazione
+di queste classi riflette una precisa filosofia di design:
+esse non si limitano a registrare il mero esito
+binario (successo o fallimento) dell'operazione di riparazione, ma fungono
+da veri e propri archivi permanenti. Di
+seguito viene presentata la definizione architetturale di queste due
+entità:
+
+\begin{lstlisting}[language=Python, label={lst:models_patch_repair}]
+from dataclasses import dataclass, field
+from typing import Optional, List, Dict, Any
+
+@dataclass
+class PatchAttempt:
+    """Archivio permanente di un singolo tentativo di riparazione."""
+    id: int
+    success: bool
+    agent_messages: List[Dict[str, Any]] = field(default_factory=list)
+    applied_diff: Optional[str] = None
+    latest_error: Optional[str] = None
+    test_results: Optional[Dict[str, Any]] = None
+
+@dataclass
+class RepairResult:
+    """Artefatto finale aggregato dell'intera pipeline HybridRepair."""
+    bug_id: str
+    success: bool
+    winning_attempt: Optional[int] = None
+    attempts: List[PatchAttempt] = field(default_factory=list)
+    fault_report: Any = None  # Riferimento alla struttura FaultReport
+    repair_spec: Any = None   # Riferimento alla struttura RepairSpec
+    
+    def summary(self) -> str:
+        """Produce una stringa riassuntiva per l'output a terminale."""
+        status = "RESOLVED" if self.success else "FAILED"
+        winning = f" (Attempt {self.winning_attempt})" if self.success else ""
+        return f"Bug {self.bug_id}: {status}{winning} - Total attempts: {len(self.attempts)}"
+\end{lstlisting}
+
+La struttura \texttt{PatchAttempt} è stata  progettata per abilitare
+una completa tracciabilità post-hoc. Il suo attributo più gravido
+di informazioni è \texttt{agent\_messages}, il quale incapsula l'intera storia
+conversazionale intercorsa tra l'agente LLM e il sistema durante
+quello specifico tentativo. Questo include ogni singolo prompt di
+sistema, le invocazioni strutturate agli strumenti (con i relativi
+identificatori \texttt{tool\_call\_id}), i diff testuali generati a scopo diagnostico,
+gli output troncati del compilatore e i fallimenti catturati
+da JUnit. Questa granularità permette di ricostruire a posteriori,
+passo dopo passo, l'intera catena decisionale e deduttiva del
+modello generativo, rivelandosi uno strumento insostituibile per il debugging
+algoritmico e l'analisi del comportamento emergente dell'agente.
+
+Ad un livello di astrazione superiore si colloca \texttt{RepairResult},
+che costituisce l'artefatto conclusivo e aggregato dell'intera pipeline a
+tre fasi. Questa struttura raccoglie al suo interno non
+solo la lista sequenziale di tutti i \texttt{PatchAttempt} eseguiti,
+ma ingloba anche il \texttt{FaultReport} (ereditato dalla Fase 1)
+e la \texttt{RepairSpec} (elaborata nella Fase 2), unificando così
+diagnosi, specifica e risoluzione in un unico blocco informativo.
+Il metodo \texttt{summary()} fornisce un'astrazione concisa, emettendo una singola
+riga di testo che si rivela essenziale per il
+monitoraggio a terminale durante l'esecuzione batch e concorrente su
+centinaia di bug (tramite lo script \texttt{run\_all\_bugs.py}).
+
+Al termine dell'esecuzione, l'onere della persistenza è delegato al
+modulo \texttt{services/rep\\orter.py}, il quale serializza ricorsivamente l'oggetto \texttt{RepairResult} in
+formato JSON. Il file risultante, salvato sotto il nome
+di \texttt{final\_report.json} all'interno della directory isolata \texttt{pipeline\_results/<bug\_id>/}, si cristallizza
+in un archivio storico permanente. Questa persistenza documentale è
+inestimabile per la ricerca accademica, poiché fornisce il dataset
+grezzo su cui condurre successive analisi statistiche di efficacia
+e comparazioni rigorose con altri sistemi di Automated Program
+Repair presenti in letteratura.
+
+\subsection{Il Flusso Completo: dalla \texttt{RepairSpec} al \texttt{RepairResult}}
+\label{subsec:3.4.9}
+Per sintetizzare la vasta orchestrazione tecnica fin qui delineata,
+è possibile tracciare l'intero viaggio dei dati all'interno del
+\texttt{PatchAgent}. Questo flusso algoritmico, che unisce inferenza neurale e
+oracoli deterministici, si snoda attraverso tre passaggi fondamentali:
+
+\paragraph{Passo 1 --- Inizializzazione del Contesto Strategico}
+Il ciclo di vita prende avvio nel costruttore \texttt{PatchAgent.\_\_init\_\_()}.
+L'agente riceve in ingresso il trittico di artefatti che
+fonda la sua conoscenza del problema: il \texttt{FaultReport} (la
+mappa del difetto), la \texttt{RepairSpec} (la strategia risolutiva) e
+gli \texttt{Ingredients} (il vocabolario delle API ammesse). In questa
+fase preparatoria, viene istanziato il client di comunicazione \texttt{AzureClient}
+e viene pre-allocato un oggetto \texttt{RepairResult} con lo stato
+iniziale impostato rigorosamente a \texttt{success=False}.
+
+\paragraph{Passo 2 --- Il Loop della Macchina a Stati Finiti (Max 3 Tentativi)}
+Il cuore operativo dell'architettura innesca un ciclo iterativo che
+concede all'agente un massimo di tre tentativi sequenziali (\texttt{max\_attempts = 3})
+per giungere a una soluzione. Per ogni tentativo $k$:
+
+\begin{description}
+    \item[Isolamento Operativo:] La funzione \texttt{\_create\_patched\_copy()} clona il progetto target
+    in una directory sandbox vergine (\texttt{pipeline\_results/<bug\_id>/attempt\_k/p\\atched\_source/}), azzerando il rischio
+    di contaminazioni inter-tentativo.
+    
+    \item[Modulazione Stocastica:] Viene prelevata la temperatura di decodifica $T_k$
+    dal vettore \texttt{LLM\_TEMPERATURE\_SCHEDULE} (valori 0.1, 0.2, 0.4), aumentando progressivamente
+    il parametro di ``creatività'' del modello a fronte dei
+    pregressi fallimenti.
+    
+    \item[Innesco del Tool-Use Loop:] Viene invocata la routine \texttt{\_run\_single\_attempt()}.
+    Si istanzia il \texttt{ToolContext}, si predispone il dispatcher degli
+    strumenti (\texttt{create\_tool\_\\executor()}) e si crea il prompt iniziale tramite
+    \texttt{\_build\_messages()}. Se l'agente si trova in un tentativo
+    $k > 1$, il prompt viene arricchito iniettando i
+    riassunti dei fallimenti precedenti estratti dalla memoria conversazionale.
+    
+    \item[Dinamica Conversazionale:] Il controllo passa ad \texttt{AzureClient.chat\_with\_tools()}, che avvia
+    un loop autonomo vincolato da un tetto massimo di
+    9 iterazioni (\texttt{max\_too\\l\_rounds}). Durante ogni round, il modello si muove
+    tra gli stati della FSM (\texttt{EXPLORE}, \texttt{PATCH}, \texttt{COMPILE},
+    \texttt{TEST}), invocando strumenti, manipolando l'albero CST del codice e
+    analizzando gli output generati. Questo anello si spezza unicamente
+    quando il modello emette un responso testuale finale privo
+    di \texttt{tool\_calls} o quando esaurisce il budget di round.
+    
+    \item[Persistenza ed Esame:] Conclusa l'interazione generativa, \texttt{conversation\_store.sav\\e()} interviene per
+    serializzare l'intero scambio in un log JSONL. Immediatamente
+    dopo, il giudice supremo \texttt{\_verify\_final()} entra in scena, invocando
+    congiuntamente il compilatore \texttt{javac} e il runner JUnit sulla
+    sandbox per produrre un \texttt{TestResult} inappellabile.
+\enlargethispage{2\baselineskip}
+
+    \item[Valutazione del Verdetto:] Se l'oracolo restituisce \texttt{PASS}, il traguardo è
+    raggiunto: \texttt{RepairResult.success} diventa \texttt{True}, il numero del tentativo corrente
+    viene marcato come \texttt{winning\_attempt} e il macro-ciclo viene interrotto
+    prematuramente con successo. Se il verdetto differisce, l'iterazione fallisce
+    e l'agente sfocia nel tentativo successivo, forte di una
+    nuova lezione memorizzata.
+\end{description}
+
+\paragraph{Passo 3 --- Restituzione del \texttt{RepairResult}}
+Esauriti i tentativi a disposizione o conseguito il successo,
+il viaggio giunge al termine. L'oggetto \texttt{RepairResult}, ormai ricolmo
+di dati diagnostici, diff, messaggi e metriche, viene restituito
+per intero all'orchestratore di livello superiore \texttt{repair\_bug.py}. Quest'ultimo, richiamando
+\texttt{reporter.py}, imprime definitivamente l'oggetto su disco, sigillando la riparazione
+del bug e liberando le risorse computazionali per l'analisi
+del difetto successivo.
+
+
