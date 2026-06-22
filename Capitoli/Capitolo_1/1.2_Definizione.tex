@@ -1,6 +1,6 @@
 \section{Definizione del Problema}
 
-\subsection{La complessità intrinseca delle NullPointerException }
+\subsection{La complessità delle NullPointerException }
 Le NullPointerException (NPE) rappresentano il focus centrale di questa tesi in quanto
  costituiscono la causa principale di eccezioni non gestite che determinano il crash 
  delle applicazioni in ambienti di produzione \cite{durieux2017dynamic}. Rispondendo alle frequenti interrogazioni 
@@ -62,14 +62,13 @@ Negli ultimi anni, i \textit{Large Language Models} (LLM) si sono affermati come
 per automatizzare \textit{task} complessi di ingegneria del software, incluse le più recenti tecniche 
 di \textit{Automated Program Repair} a livello di \textit{repository} \cite{zhang2024llmhallucinations,pabba2025semagent}. 
 Tuttavia, nonostante le notevoli capacità dimostrate nella risoluzione di frammenti di codice isolati, 
-un'analisi accademica rigorosa rivela che i sistemi basati su LLM "puri" presentano dei difetti strutturali 
-intrinseci quando sono chiamati ad affrontare \textit{bug} complessi e semanticamente densi. 
+un'analisi accademica rigorosa rivela che i sistemi basati su LLM "puri" presentano  difetti strutturali 
+ quando sono chiamati ad affrontare \textit{bug} complessi e semanticamente densi. 
 Con il termine LLM "puro" si intende l'utilizzo del modello di base che, pur elaborando le informazioni 
 locali fornite nel \textit{prompt} (come la descrizione testuale del problema e le righe di codice immediatamente sospette), 
 opera in totale isolamento rispetto all'ecosistema dell'intero progetto. A causa dei rigidi limiti sui token, 
 infatti, è impossibile e impraticabile includere l'intero contesto del \textit{repository} all'interno del 
-\textit{prompt}; di conseguenza, senza l'ausilio di infrastrutture esterne (come sistemi di \textit{Retrieval} 
-o validatori formali), il modello è costretto ad affidarsi esclusivamente alle proprie congetture statistiche derivate
+\textit{prompt}; di conseguenza, senza l'ausilio di infrastrutture esterne, il modello è costretto ad affidarsi esclusivamente alle proprie congetture statistiche derivate
 dall'addestramento, ignorando le reali relazioni tra i file.
 Tali limiti emergono in modo evidente di fronte a problematiche che richiedono una profonda comprensione del 
 flusso di controllo, dei dati o delle dipendenze di stato. Come sottolineato dalla letteratura, la debolezza 
@@ -111,12 +110,12 @@ si limita quindi ad agire come un mero cerotto superficiale che fallisce nel ges
 limite (\textit{edge cases}) e non soddisfa i requisiti di coerenza più ampi e profondi dell'applicazione \cite{pabba2025semagent}.
 
 Infine, questa tendenza all'\textit{overfitting} e alla generazione di soluzioni localmente ottime ma 
-globalmente fallate è inestricabilmente legata alla mancanza di una reale consapevolezza 
-del codice. Zhang et al. sottolineano come l'assenza di un contesto a livello di intero progetto 
+globalmente fallate è legata alla mancanza di una reale consapevolezza 
+del codice da parte dei modelli. Zhang et al. sottolineano come l'assenza di un contesto a livello di intero progetto 
 (\textit{repository-level context}) impedisca agli LLM puri di comprendere le dipendenze profonde necessarie 
 per vere riparazioni \cite{zhang2024llmhallucinations}. In scenari di sviluppo reali, la stragrande maggioranza delle funzioni 
 dipende da entità definite altrove nel progetto o da API personalizzate; tuttavia, i rigidi limiti 
-sui \textit{token} dei modelli \textit{Transformer} rendono impossibile e impraticabile l'inclusione dell'intero 
+sui \textit{token} dei modelli rendono impossibile e impraticabile l'inclusione dell'intero 
 contesto del \textit{repository} nel \textit{prompt}. Di conseguenza, ignorando le catene di chiamate transitive 
 e i vincoli architetturali distribuiti su molteplici file, i modelli "puri" si affidano 
 a supposizioni statistiche cieche, generando conflitti di dipendenza e riparazioni semanticamente 
@@ -124,11 +123,9 @@ vuote che non possono integrarsi in sicurezza in basi di codice complesse \cite{
 
 \subsection{L'illusione della Perfect Fault Localization}
 
-Le elevate percentuali di successo (\textit{fix rate}) vantate dalla recente letteratura sui 
+Le elevate percentuali di successo vantate dalla recente letteratura sui 
 \textit{tool} di \textit{Automated Program Repair} basati su \textit{Large Language Models} 
-sono spesso drasticamente sovrastimate. Alla base di questo ottimismo ingiustificato risiede un 
-vizio di forma metodologico profondamente radicato nelle prassi di valutazione: l'assunzione 
-della \textit{Perfect Fault Localization} (PFL) \cite{li2024hybrid}. Gran parte della ricerca 
+sono spesso sovrastimate a causa dell' utilizzo della \textit{Perfect Fault Localization} (PFL) \cite{li2024hybrid}, Gran parte della ricerca 
 accademica valuta l'efficacia dei modelli fornendo loro l'esatta riga di codice o la specifica 
 funzione contenente il difetto, assumendo artificialmente che tale informazione sia sempre 
 disponibile e accurata \cite{li2024hybrid}. Di conseguenza, la letteratura fornisce misure della capacità di generare 
@@ -144,8 +141,8 @@ sviluppatori utilizzano gli oracoli (come le \textit{suite} di \textit{test}) pe
 il fallimento o il successo di un programma, dall'altro lato, per localizzare effettivamente la 
 posizione del difetto all'interno del codice sorgente, non dispongono di puntatori infallibili. 
 Essi devono pertanto affidarsi necessariamente a tecniche di \textit{Automated Fault Localization} (AFL),
-le quali sono intrinsecamente imperfette e rumorose \cite{li2024hybrid}.
-La contrapposizione tra gli scenari di PFL e AFL svela la grave fragilità degli
+le quali sono per natura imperfette \cite{li2024hybrid}.
+La contrapposizione tra gli scenari di PFL e AFL svela una fragilità degli
 attuali sistemi di riparazione. Il lavoro di [Campos et al., 2025] evidenzia esplicitamente
 un calo significativo dell'accuratezza quando i \textit{tool} vengono testati in condizioni
 realistiche e imperfette.
@@ -163,27 +160,27 @@ ben 171 \textit{bug}.
 Quando però lo stesso strumento è stato messo alla prova nello scenario ben più
 sfidante e realistico dell'\textit{Automated Fault Localization}, il numero di
 \textit{bug} risolti è crollato drasticamente a soli 64 \cite{li2024hybrid}.
-Questo divario incolmabile dimostra che le \textit{performance} eccellenti decantate in laboratorio
-dipendono quasi esclusivamente dall'innesco artificiale fornito dalla localizzazione esatta.
+Questo divario incolmabile dimostra che queste \textit{performance} eccellenti
+dipendono quasi esclusivamente dall'inserimento artificiale della localizzazione esatta.
 
 La causa sottostante a un fallimento così clamoroso dei modelli in assenza di PFL
 risiede nella loro grave carenza di reali capacità di ragionamento, mascherata
 da un'eccessiva memorizzazione del codice sorgente.
 Il rigoroso impianto analitico basato sul test delle ipotesi introdotto da [Kong et al., 2025a]
 smaschera l'illusione della comprensione semantica degli LLM, permettendo di distinguere
-analiticamente la vera risoluzione di un problema dalla mera riproduzione dei dati
+analiticamente la vera risoluzione di un problema dalla riproduzione dei dati
 di addestramento. \cite{kong2025demystifying}
 
 L'esperimento dimostra questa dinamica testando LLM (GPT-3.5 e CodeLlama) su due
 \textit{dataset} distinti: Defects4J, storico e presumibilmente memorizzato, e
 GitBug-Java, recente e sconosciuto ai modelli.
 Le statistiche presentate nello studio sono inequivocabili: nel noto \textit{dataset} Defects4J,
-una percentuale altissima delle \textit{patch} ritenute corrette — nello specifico il
-78,83\% per GPT-3.5 e l'87,42\% per CodeLlama-7b — non è in alcun modo frutto di ragionamento o
+una percentuale altissima delle \textit{patch} ritenute corrette, nello specifico il
+78,83\% per GPT-3.5 e l'87,42\% per CodeLlama-7b, non è in alcun modo frutto di ragionamento o
 reale riparazione, ma consiste in un "\textit{exact match}", ossia in una rigurgitazione
 letterale di codice memorizzato durante la fase di \textit{training}.
 
-Ancora più allarmante è la prova definitiva fornita da questi esperimenti attraverso
+Ancora più allarmante è la prova fornita da questi esperimenti attraverso
 l'alterazione sistematica del codice. I ricercatori hanno mutato pesantemente il codice
 affetto da \textit{bug}, omettendo il contesto logico essenziale o scambiando e
 rinominando le variabili chiave.
@@ -201,21 +198,14 @@ autonomamente; sprovvisti di una reale capacità di \textit{problem-solving}, es
 restituire \textit{pattern} memorizzati, fallendo irrimediabilmente nella risoluzione dei \textit{bug}
 non appena lo scenario si discosta dai confini sicuri dei test di laboratorio \cite{kong2025demystifying}.
 
-\subsection{La necessità di una guida semantica rigorosa}
+\subsection{La necessità di una guida semantica}
 
-Come emerso dall'analisi della letteratura, lo stato dell'arte dell'\textit{Automated Program Repair} (APR) 
-si scontra con un evidente vicolo cieco quando affronta \textit{bug} complessi come le \textit{NullPointerException} (NPE). 
-La risoluzione delle NPE richiede una comprensione profonda del flusso di controllo e comporta, non di rado, 
-modifiche multi-punto all'interno del codice. Da un lato, affidarsi unicamente a un \textit{Large Language Model} 
-"puro" per localizzare e risolvere tali \textit{bug} si è rivelata una strategia fondamentalmente inefficace \cite{feng2025concurrency}.
-Gli LLM, se privi di una \textit{Perfect Fault Localization} (PFL), si smarriscono nell'eccesso di contesto, 
-ignorando i legami causali profondi e limitandosi a euristiche superficiali di similarità \cite{sepidband2026rgfl}. 
-Inoltre, come ampiamente documentato, i modelli generativi lasciati agire senza una guida esplicita 
-mostrano una marcata inclinazione all'allucinazione e alla mera memorizzazione statistica, risultando 
-incapaci di ricostruire la semantica rigorosa del difetto \cite{sepidband2026rgfl, abtahi_augmenting}. 
+Le evidenze raccolte nelle sezioni precedenti convergono verso un unico nodo critico: né gli approcci 
+APR tradizionali né gli LLM privi di una localizzazione formale riescono ad affrontare la natura 
+inter-procedurale delle NPE, poiché entrambi operano su un contesto semantico insufficiente. 
+Superare questo ostacolo impone un radicale cambio di paradigma.
 
-Il superamento di questo ostacolo impone, di conseguenza, un radicale cambio di paradigma: la straordinaria 
-capacità generativa e la flessibilità dei \textit{Large Language Models} devono essere necessariamente accoppiate 
+la straordinaria capacità generativa e la flessibilità dei \textit{Large Language Models} devono essere necessariamente accoppiate 
 a un "motore di ragionamento" esterno, formale e rigoroso. È essenziale promuovere una profonda integrazione 
 tra intelligenza artificiale e le tecniche tradizionali e formali di analisi del programma. Autori recenti 
 supportano con forza questa necessità di ibridazione; ad esempio, [Feng et al., 2025] dimostrano che l'unione 
@@ -229,28 +219,7 @@ mirato risulta assolutamente essenziale per convertire il recupero di frammenti 
 A tal fine, questa ricerca si baserà sull'integrazione di \textit{LogicFL} \cite{kim2024identifying}, uno strumento di
 localizzazione dei guasti specificamente progettato per le \textit{NullPointerException} (NPE). A differenza degli
 approcci basati unicamente su euristiche probabilistiche, \textit{LogicFL} si fonda sulla programmazione logica (Prolog)
-per imitare il rigoroso processo deduttivo degli sviluppatori umani durante il \textit{debugging}, ricostruendo a ritroso
-il percorso del valore \textit{null} dall'espressione che ha scatenato l'eccezione fino alla sua origine esatta. Ne
-risulta un processo di deduzione tracciabile, trasparente e privo di ambiguità, di cui si descriverà il funzionamento
-nel dettaglio nel capitolo successivo.
-
-È proprio la rigorosa tracciabilità causale offerta da questa inferenza logica a motivare il suo impiego come "guida" per 
-i modelli generativi. L'adozione di \textit{LogicFL} all'interno del nostro approccio persegue, dunque, un duplice e vitale scopo:
-
-\begin{itemize}
-    \item \textbf{Fornire al motore generativo (LLM) un contesto semantico solido e "sicuro":} estraendo l'esatta catena 
-    logica e di esecuzione (i "fatti"), \textit{LogicFL} solleva l'LLM dal compito di navigare ciecamente nell'intero codice sorgente. 
-    Tracciando esplicitamente come il valore \textit{null} viene trasferito all'interno del flusso di controllo, si isolano 
-    esclusivamente le dipendenze e i percorsi realmente coinvolti. In questo modo si offre al modello un perimetro logico 
-    inequivocabile su cui operare, completamente depurato dall'eccesso di contesto che tipicamente causa disorientamento.
-
-    \item \textbf{Restringere drasticamente lo spazio di ricerca e le possibilità di allucinazione:} l'applicazione delle 
-    regole deduttive dello strumento funge da filtro inflessibile contro le associazioni spurie. Identificando con precisione 
-    le sole espressioni che causano o trasferiscono il difetto, si guida attivamente l'LLM verso la sintesi di una \textit{patch} 
-    sulle sole variabili formalmente rilevanti \cite{kim2024identifying}. Ciò garantisce un intervento semanticamente e 
-    logicamente fondato, anziché limitarsi a un'ipotesi puramente statistica.
-\end{itemize}
-
-L'utilizzo di \textit{LogicFL} rappresenta, in conclusione, l'anello di congiunzione essenziale per orchestrare il rigore 
-deduttivo e la causalità dell'analisi formale \cite{kim2024identifying} con l'espressività dell'IA, superando definitivamente 
-i limiti degli approcci puramente generativi.
+per ricostruire in modo tracciabile e privo di ambiguità il percorso del valore \textit{null} fino alla sua origine esatta.
+È proprio questa rigorosa tracciabilità causale a motivarne l'impiego come "guida" semantica per i modelli generativi: il
+funzionamento dello strumento e il modo in cui esso viene integrato nell'architettura proposta saranno descritti nel dettaglio
+nel capitolo successivo.

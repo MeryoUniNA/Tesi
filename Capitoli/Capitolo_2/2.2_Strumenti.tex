@@ -26,8 +26,24 @@ materialmente innescato il crash \cite{kim2024identifying}. Successivamente, tra
 il percorso del valore \textit{null} esplorando diverse origini causali: dall'identificazione 
 dell'origine esatta in cui il valore \textit{null} è stato generato o restituito (\textit{Origin scheme}), 
 all'individuazione dei percorsi che hanno fatto da tramite per il suo trasferimento (\textit{Transfer scheme}) 
-\cite{kim2024identifying}. All'interno di \textit{HybridRepair}, LogicFL funge da "Oracolo dei Guasti" deterministico, 
-fornendo all'intelligenza artificiale un referto causale privo di allucinazioni.
+\cite{kim2024identifying}. All'interno di \textit{HybridRepair}, LogicFL funge da "Oracolo dei Guasti" deterministico,
+fornendo all'intelligenza artificiale un referto causale privo di allucinazioni. È proprio questa rigorosa
+tracciabilità causale a motivarne l'impiego come "guida" per i modelli generativi: l'adozione di \textit{LogicFL}
+persegue, in particolare, un duplice e vitale scopo.
+
+\begin{itemize}
+    \item \textbf{Fornire al motore generativo (LLM) un contesto semantico solido e "sicuro":} estraendo l'esatta catena
+    logica e di esecuzione (i "fatti"), \textit{LogicFL} solleva l'LLM dal compito di navigare ciecamente nell'intero codice sorgente.
+    Tracciando esplicitamente come il valore \textit{null} viene trasferito all'interno del flusso di controllo, si isolano
+    esclusivamente le dipendenze e i percorsi realmente coinvolti. In questo modo si offre al modello un perimetro logico
+    inequivocabile su cui operare, completamente depurato dall'eccesso di contesto che tipicamente causa disorientamento.
+
+    \item \textbf{Restringere drasticamente lo spazio di ricerca e le possibilità di allucinazione:} l'applicazione delle
+    regole deduttive dello strumento funge da filtro inflessibile contro le associazioni spurie. Identificando con precisione
+    le sole espressioni che causano o trasferiscono il difetto, si guida attivamente l'LLM verso la sintesi di una \textit{patch}
+    sulle sole variabili formalmente rilevanti \cite{kim2024identifying}. Ciò garantisce un intervento semanticamente e
+    logicamente fondato, anziché limitarsi a un'ipotesi puramente statistica.
+\end{itemize}
 
 \subsection{Tree-sitter: Parsing Incrementale ad Alta Fedeltà}
 Mentre LogicFL fornisce le coordinate logiche del difetto, la traduzione di queste direttive in un contesto 

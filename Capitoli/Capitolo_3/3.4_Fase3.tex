@@ -3,28 +3,16 @@
 \label{sec:3.4}
 \label{sec:fase3}
 La terza e ultima fase dell'architettura \texttt{HybridRepair},
-implementata dal modulo \texttt{PatchAgent}, rappresenta il nucleo
-esecutivo e risolutivo dell'intero sistema. Se consideriamo
-il processo di riparazione automatica del software come un'indagine
-diagnostica seguita da un intervento correttivo, il
-\texttt{PatchAgent} costituisce la fase dell'intervento chirurgico.
+implementata dal modulo \texttt{PatchAgent}, costituisce il nucleo
+esecutivo del sistema.
 
-Per comprendere appieno il ruolo di questa fase,
-è utile metterla in prospettiva rispetto a quelle
-che la precedono. La Fase 1 (\texttt{FaultOracle})
-ha il compito di localizzare il difetto e
-comprenderne le cause profonde, rispondendo alle domande
-diagnostiche: \textit{dove} si trova l'errore e
-\textit{perché} il programma fallisce. Successivamente, la
-Fase 2 (\texttt{SpecReason}) astrae queste informazioni per
-formulare una specifica concettuale di riparazione, rispondendo
-alla domanda progettuale: \textit{cosa} deve essere
-logicamente modificato per ripristinare la correttezza.
-Il \texttt{PatchAgent} riceve questi costrutti teorici e
-li cala nella realtà del codice sorgente,
-rispondendo all'interrogativo più tecnico e strettamente
-operazionale: \textit{come} il codice Java deve
-essere concretamente alterato.
+Le tre fasi si ripartiscono tre domande distinte. La Fase 1 (\texttt{FaultOracle})
+localizza il difetto e ne individua le cause, rispondendo a
+\textit{dove} si trova l'errore e \textit{perché} il programma fallisce.
+La Fase 2 (\texttt{SpecReason}) astrae queste informazioni in una specifica
+concettuale di riparazione, rispondendo a \textit{cosa} debba essere
+modificato. Il \texttt{PatchAgent} cala questi costrutti nel codice sorgente,
+rispondendo a \textit{come} il codice Java vada concretamente alterato.
 
 Questa traduzione da specifica concettuale a modifica
 concreta non è banale. Il \texttt{PatchAgent}
@@ -178,52 +166,28 @@ il diagramma a blocchi riportato in Figura~\ref{fig:flusso_patchagent}.
 \subsubsection{Spiegazione del Flusso di Esecuzione}
 \label{subsubsec:3.4.1.1}
 Il diagramma illustra la natura iterativa e auto-correttiva
-del \texttt{PatchAgent}. Inizialmente, il sistema configura
-l'ambiente e avvia il primo di un massimo
-di tre tentativi.
-All'inizio di ogni tentativo, il sistema esegue
-un setup fondamentale: crea una copia nuova
-e isolata del codice sorgente difettoso all'interno
-di un sandbox dedicato (\texttt{pipeline\_results/<bug\_id>/attempt\_k/patched\_source/}). Questo
-isolamento è cruciale per evitare che eventuali modifiche
-errate apportate in un tentativo inquinino i
-tentativi successivi. Contestualmente, viene impostata la temperatura
-del modello LLM secondo uno schedule adattivo (es.
-$0.1$, $0.2$, $0.4$), aumentando gradualmente la
-``creatività'' del modello in caso di fallimenti
-ripetuti.
+del \texttt{PatchAgent}. All'inizio di ognuno dei (massimo) tre tentativi,
+il sistema crea una copia isolata del codice difettoso in un sandbox
+dedicato (\texttt{pipeline\_results/<bug\_id>/attempt\_k/patched\_source/}), per
+evitare che le modifiche di un tentativo inquinino i successivi, e imposta
+la temperatura del modello secondo uno schedule adattivo ($0.1$, $0.2$, $0.4$)
+che ne aumenta la ``creatività'' a fronte di fallimenti ripetuti.
 
-Una volta preparato l'ambiente, l'esecuzione entra nel
-vero e proprio \textit{Tool-Use Loop}. In questa
-fase, il modello linguistico e il toolkit di
-strumenti interagiscono dinamicamente. È qui che prende
-vita la Macchina a Stati Finiti, guidando l'agente
-a esplorare il codice, generare e applicare
-una patch, per poi testarla compilando il codice.
-L'agente ha a disposizione un budget massimo di
-round di interazione (tipicamente 9) per completare
-questa operazione.\\\\
+Preparato l'ambiente, l'esecuzione entra nel \textit{Tool-Use Loop}, dove il
+modello e il toolkit interagiscono dinamicamente: è qui che prende vita la FSM,
+guidando l'agente a esplorare il codice, generare e applicare una patch e
+testarla. L'agente dispone di un budget massimo di round di interazione
+(tipicamente 9).\\\\
 
-Usciti dal loop conversazionale, il sistema procede con
-una Verifica Finale rigorosa, agendo da giudice deterministico:
-invoca il compilatore Java (\texttt{javac}) e il
-framework di test (\texttt{JUnit}) sul codice modificato
-nel sandbox. A questo punto si valuta l'esito:
-se tutti i test passano (\texttt{PASS}), la
-riparazione ha avuto successo, il loop si interrompe
-e il tentativo corrente viene registrato come vincente.
-
-Si invece i test falliscono o il codice non
-compila, il sistema valuta se ha ancora tentativi
-a disposizione. In caso affermativo, la storia dei
-fallimenti (gli errori commessi e le patch inefficaci)
-viene salvata nella memoria conversazionale e iniettata
-nel prompt del ciclo successivo per indicare all'LLM
-cosa non fare. Il ciclo riparte con una
-nuova copia del codice e una temperatura più elevata.
-Terminato il budget di tentativi o raggiunto il
-successo, il sistema aggrega tutte le informazioni in
-un oggetto \texttt{RepairResult} e termina l'esecuzione.
+Usciti dal loop, il sistema procede con una verifica finale deterministica:
+invoca il compilatore (\texttt{javac}) e il framework di test (\texttt{JUnit})
+sul codice nel sandbox. Se tutti i test passano (\texttt{PASS}), la riparazione
+ha successo e il tentativo viene registrato come vincente. Se i test falliscono
+o il codice non compila, e restano tentativi disponibili, la storia dei
+fallimenti viene salvata nella memoria conversazionale e iniettata nel prompt
+successivo per indicare all'LLM cosa evitare; il ciclo riparte con una nuova
+copia del codice e una temperatura più elevata. Esauriti i tentativi o raggiunto
+il successo, il sistema aggrega le informazioni in un oggetto \texttt{RepairResult}.
 
 
 \subsection{Il Ciclo di Vita dell'Agente: la FSM di PatchAgent}
@@ -231,23 +195,13 @@ un oggetto \texttt{RepairResult} e termina l'esecuzione.
 
 \label{subsubsec:3.4.2.1}
 Il comportamento operativo del \texttt{PatchAgent}, all'interno del suo
-ciclo di riparazione, è modellato rigorosamente secondo i principi
-di una Macchina a Stati Finiti (FSM, \textit{Finite-State Machine}).
-Da un punto di vista formale e matematico, una
-FSM viene definita come una quintupla $M = (Q, \Sigma, \delta, q_0, F)$.
-In questa struttura teorica, $Q$ rappresenta l'insieme finito degli
-stati in cui il sistema può trovarsi, $\Sigma$ costituisce
-l'alfabeto degli input (ovvero gli eventi o i risultati
-che innescano un cambiamento), $\delta : Q \times \Sigma \to Q$
-definisce la funzione di transizione che mappa una combinazione
-di stato corrente e input verso uno stato successivo,
-$q_0 \in Q$ denota lo stato iniziale del sistema,
-e infine $F \subseteq Q$ rappresenta l'insieme degli stati
-finali o accettanti, il cui raggiungimento segna la terminazione
-del processo.
+ciclo di riparazione, è modellato secondo i principi di una Macchina a
+Stati Finiti (FSM, \textit{Finite-State Machine}), formalmente una quintupla
+$M = (Q, \Sigma, \delta, q_0, F)$ con $Q$ insieme degli stati, $\Sigma$
+alfabeto degli input, $\delta : Q \times \Sigma \to Q$ funzione di transizione,
+$q_0$ stato iniziale e $F$ insieme degli stati accettanti.
 
-Calando questo modello astratto nella realtà architetturale del \texttt{PatchAgent},
-possiamo definire con precisione i parametri della quintupla. L'insieme
+Calando questo modello nell'architettura del \texttt{PatchAgent}, l'insieme
 degli stati operativi è definito come segue:
 \[
     Q = \{\texttt{EXPLORE}, \texttt{PATCH}, \texttt{COMPILE}, \texttt{TEST}, \texttt{DONE}, \texttt{RETRY}\}
@@ -316,14 +270,10 @@ La Tabella~\ref{tab:fsm_transitions} illustra le transizioni di stato previste d
 
 \newpage
 \paragraph{Il Concetto di FSM Emergente}
-Un concetto chiave, fondamentale per comprendere il design
-di \texttt{HybridRepair}, è che questa FSM non è implementata
-in modo tradizionale. Nel codice sorgente non esiste una
-classe Python cablata con un attributo \texttt{state} esplicito o
-una tabella di transizioni rigidamente codificata tramite istruzioni \texttt{if/switch}.
-
-È importante precisare che questa FSM non è implementata come una classe Python con un
-attributo \texttt{state} esplicito e una tabella di transizioni codificata. Essa prende vita organicamente dalla combinazione del \textit{System Prompt}
+Un aspetto chiave del design di \texttt{HybridRepair} è che questa FSM non è
+implementata in modo tradizionale: nel codice non esiste una classe Python con
+un attributo \texttt{state} esplicito né una tabella di transizioni codificata
+con istruzioni \texttt{if/switch}. Essa prende vita organicamente dalla combinazione del \textit{System Prompt}
 iniettato nel Large Language Model (GPT-4o) e dal loop
 di controllo implementato nei metodi \texttt{PatchAgent.run()} e \texttt{AzureClient.chat\_with\_tools()}. Sulla
 scorta dei successi ottenuti da sistemi recenti come \texttt{RepairAgent}
@@ -369,48 +319,32 @@ sono tre regole fondamentali che meritano un'analisi approfondita:
 \begin{description}
     \item[La Sequenza Numerata delle Azioni:]
     (\texttt{1.\ EXPLORE} $\rightarrow$ \texttt{2.\ PATCH} $\rightarrow$ \texttt{3.\ COMPILE} $\rightarrow$ \texttt{4.\ TEST}):
-    Questa enumerazione codifica il grafo di transizione della FSM in puro linguaggio naturale.
-     A livello di architettura neurale, i modelli basati su Transformer (come \texttt{GPT-4o}) 
-     sono funzioni intrinsecamente \textit{stateless} che non possiedono una rappresentazione 
-     interna nativa di un automa a stati finiti \cite{sumers2023cognitive}. Tuttavia, 
-     nei loro vastissimi dataset di addestramento, la struttura numerata di un elenco è 
-     statisticamente e fortemente associata a una rigida sequenza causale e temporale di azioni. 
-     Sfruttando questa proprietà distribuzionale \cite{wang2023plan}, il modello viene
-     indotto a risolvere i task in modo procedurale, esplorando l'ambiente (passo 1) rigorosamente 
-     prima di tentare l'applicazione di una modifica (passo 2). Questo approccio linguistico, 
-     in linea con i consolidati paradigmi di \textit{Reasoning and Acting} \cite{yao2022react}, 
-     permette all'LLM di emulare con elevata affidabilità l'avanzamento di stato di una macchina astratta.
+    Questa enumerazione codifica il grafo di transizione della FSM in linguaggio naturale.
+     I modelli Transformer (come \texttt{GPT-4o}) sono intrinsecamente \textit{stateless} e non
+     possiedono una rappresentazione nativa di un automa a stati finiti \cite{sumers2023cognitive};
+     tuttavia, nei dati di addestramento una lista numerata è fortemente associata a una sequenza
+     causale e temporale di azioni. Sfruttando questa proprietà \cite{wang2023plan}, il modello
+     è indotto a procedere in modo ordinato, esplorando l'ambiente prima di applicare una modifica,
+     in linea con i paradigmi di \textit{Reasoning and Acting} \cite{yao2022react}.
 
     \item[Il Divieto di Diff Testuali:]
     (\texttt{"ALWAYS use apply\_ast\_patch... Never output raw diffs."}):
-    Questa direttiva affronta uno dei problemi di \textit{fallback} più diffusi nella 
-    generazione di codice tramite agenti LLM. Se non rigorosamente vincolati, 
-    i modelli tendono infatti a eludere l'invocazione degli strumenti esterni, 
-    ripiegando su risposte conversazionali che includono frammenti di codice o diff 
-    testuali sparsi all'interno di discorsi in prosa libera. Come evidenziato in 
-    letteratura \cite{jimenez2024sweagent}, 
-    la generazione diretta di diff testuali (\textit{raw diffs}) da parte di un LLM è altamente 
-    prona a errori di formattazione e risulta intrinsecamente incompatibile con le pipeline di applicazione automatizzata.
-    La formulazione perentoria nel prompt, rafforzata da una negazione esplicita (\textit{negative constraint}, 
-    \texttt{"Never output raw diffs"}), forza l'agente a delegare l'atto della manipolazione del codice unicamente 
-    allo strumento strutturato \texttt{apply\_ast\_patch}. Senza questo stringente vincolo operativo \cite{qin2023toolllm}, 
-    il modello potrebbe teoricamente dedurre e descrivere a parole una soluzione corretta, ma fallire nell'applicarla fisicamente 
-    sul file. Ciò vanificherebbe irrimediabilmente la successiva fase di \texttt{COMPILE}, poiché il codice sorgente originario 
-    rimarrebbe di fatto inalterato.
+    Se non vincolati, i modelli tendono a eludere l'invocazione degli strumenti, ripiegando su
+    frammenti di codice o diff testuali inseriti nella prosa. La generazione diretta di \textit{raw diffs}
+    è però prona a errori di formattazione e incompatibile con le pipeline di applicazione
+    automatizzata \cite{jimenez2024sweagent}. La negazione esplicita (\textit{negative constraint})
+    forza l'agente a delegare la manipolazione del codice unicamente a \texttt{apply\_ast\_patch}
+    \cite{qin2023toolllm}: senza questo vincolo il modello potrebbe descrivere a parole una soluzione
+    corretta senza applicarla, vanificando la fase di \texttt{COMPILE} poiché il sorgente resterebbe inalterato.
 
     \item[Il Vincolo di Minimalità:]
     (\texttt{"Keep fixes MINIMAL..."}):
-    Questa direttiva recepisce un principio cardine della teoria dell'Automated Program Repair (APR) 
-    \cite{huang2024evolving}. Un assunto fondamentale della disciplina stabilisce infatti che 
-    le patch minime presentano una probabilità nettamente inferiore di indurre regressioni su comportamenti 
-    del sistema che non sono coperti dalla suite di test utilizzata per validare il bug. Ricerche empiriche 
-    su sistemi allo stato dell'arte \cite{xia2024fitrepair} hanno dimostrato che le correzioni 
-    di dimensione unitaria (le cosiddette patch \textit{single-hunk}, ovvero concentrate su un singolo 
-    blocco logico contiguo) risultano possedere un grado di plausibilità e generalizzazione di gran 
-    lunga superiore rispetto alle modifiche distribuite e invasive (\textit{multi-hunk}). Forzando 
-    il modello linguistico a privilegiare la minima perturbazione necessaria a ripristinare il 
-    comportamento atteso, si mitiga drasticamente il problema dell'overfitting sui test falliti, 
-    favorendo la generazione di patch genuinamente corrette e generalizzabili \cite{campos2025exploring}.
+    Questa direttiva recepisce un principio cardine dell'APR \cite{huang2024evolving}: le patch minime
+    hanno una probabilità inferiore di indurre regressioni su comportamenti non coperti dalla suite di
+    test. Ricerche su sistemi allo stato dell'arte \cite{xia2024fitrepair} mostrano che le patch
+    \textit{single-hunk} (concentrate su un singolo blocco contiguo) sono più plausibili e generalizzabili
+    delle modifiche \textit{multi-hunk} distribuite. Privilegiare la minima perturbazione necessaria
+    mitiga l'overfitting sui test falliti \cite{campos2025exploring}.
 \end{description}
 
 
@@ -423,116 +357,62 @@ contestuale del difetto prima di tentare di alterare il codice.
 Durante questa fase esplorativa, l'agente è libero di invocare tre
 strumenti specifici del suo toolkit: \texttt{read\_file}, \texttt{search\_symbol} e \texttt{get\_method\_signature}.
 
-A un'osservazione superficiale, la necessità di una fase di esplorazione
-potrebbe apparire ridondante. Dopotutto, nel prompt iniziale, il sistema inietta
-già nel contesto dell'agente un set di informazioni ricchissimo: il
-codice sorgente del metodo difettoso estratto fedelmente, la specifica concettuale
-di riparazione (\texttt{RepairSpec}) e un vocabolario dettagliato delle API disponibili
-(\texttt{Ingredients}). Perché, dunque, un agente così informato dovrebbe avere bisogno
-di esplorare ulteriormente il workspace?
-
-La risposta risiede nella natura intrinsecamente complessa e interconnessa del
-software \textit{enterprise}. Le informazioni fornite staticamente nel prompt sono per
-definizione localizzate attorno al presunto epicentro del difetto. Tuttavia, esistono
-due categorie principali di anomalie per cui questo perimetro informativo
-risulta insufficiente:
+La fase di esplorazione potrebbe sembrare ridondante: il prompt iniziale fornisce già il codice
+del metodo difettoso, la \texttt{RepairSpec} e il vocabolario delle API (\texttt{Ingredients}).
+Tuttavia queste informazioni sono localizzate attorno all'epicentro del difetto, e due categorie
+di anomalie rendono insufficiente questo perimetro:
 
 \begin{description}
-    \item[Bug con propagazione cross-method:] Non sempre la causa radice di
-    un fallimento risiede nel metodo in cui l'eccezione viene sollevata
-    o in cui si manifesta il comportamento anomalo identificato da
-    \texttt{LogicFL}. Spesso, il difetto si nasconde in un metodo chiamato
-    a cascata, oppure nelle interfacce implementate da una sottoclasse. In
-    scenari di questo tipo, l'agente deve poter navigare oltre i
-    confini del file iniziale, leggendo moduli aggiuntivi per mappare l'intero
-    flusso di esecuzione e comprendere il contesto globale prima di
-    formulare una patch che sia non solo sintatticamente corretta, ma
+    \item[Bug con propagazione cross-method:] La causa radice non sempre risiede nel metodo in cui
+    l'eccezione viene sollevata: può nascondersi in un metodo chiamato a cascata o in interfacce
+    implementate da una sottoclasse. In questi casi l'agente deve navigare oltre il file iniziale,
+    leggendo moduli aggiuntivi per mappare il flusso di esecuzione prima di formulare una patch
     semanticamente risolutiva.
 
-    \item[Bug con API ambigue:] Anche quando la \texttt{RepairSpec} suggerisce esplicitamente
-    il ricorso a una specifica API per risolvere il problema,
-    il rigoroso sistema di tipi di Java può presentare ostacoli. 
-    La firma esatta del metodo da invocare potrebbe non
-    essere del tutto chiara a priori, specialmente in presenza di
-    concetti avanzati come l'overload multiplo di metodi o parametri generici
-    con vincoli complessi. Attraverso lo strumento \texttt{get\_method\_signature}, l'agente può attivamente
-    interrogare il sistema per ispezionare dinamicamente le firme reali delle
-    API e disambiguare il contesto prima di tentare la sintesi
-    del codice correttivo.
+    \item[Bug con API ambigue:] Anche quando la \texttt{RepairSpec} suggerisce una specifica API, la
+    firma esatta può non essere chiara a priori (overload multipli, parametri generici con vincoli).
+    Lo strumento \texttt{get\_method\_signature} permette all'agente di ispezionare le firme reali e
+    disambiguare prima di sintetizzare il codice.
 \end{description}
 
-Un aspetto interessante della fase \texttt{EXPLORE} riguarda il suo
-meccanismo di terminazione. La durata di questa fase, misurabile
-in numero di round di invocazione degli strumenti,
-non è rigidamente temporizzata, ma è deterministica solo in senso probabilistico.
-L'agente valuta autonomamente la propria confidenza: quando ritiene di aver
-accumulato una massa critica di informazioni sufficiente, decide di agire.
-La transizione alla fase successiva (\texttt{PATCH}) avviene in modo del
-tutto implicito: è innescata nel momento esatto in cui l'output
-testuale generato dal modello LLM include un'invocazione formale allo strumento
-\texttt{apply\_ast\_patch}. Questa singola azione sancisce il passaggio dalla diagnosi passiva
-all'intervento attivo.
+La durata della fase \texttt{EXPLORE}, misurata in numero di round di invocazione
+degli strumenti, non è prefissata: l'agente valuta autonomamente quando ha
+raccolto informazioni sufficienti per agire. La transizione a \texttt{PATCH} è
+implicita, innescata nel momento in cui l'output del modello include
+un'invocazione allo strumento \texttt{apply\_ast\_patch}.
 
 \subsubsection{La Fase PATCH: Applicazione Chirurgica della Modifica}
 \label{subsubsec:3.4.2.3}
-La fase \texttt{PATCH} rappresenta il climax operativo del ciclo di
-riparazione. È in questo stato che l'agente decide di invocare
-lo strumento \texttt{apply\_ast\_patch}, fornendo come argomenti il percorso del file
-bersaglio, il nome del metodo che intende rimpiazzare, il codice
-sorgente completo del nuovo metodo e, laddove necessario, un numero
-di riga come \textit{hint} per risolvere eventuali ambiguità legate all'overloading.
+Nella fase \texttt{PATCH} l'agente invoca lo strumento \texttt{apply\_ast\_patch},
+fornendo come argomenti il percorso del file bersaglio, il nome del metodo da
+rimpiazzare, il codice sorgente completo del nuovo metodo e, se necessario, un
+numero di riga come \textit{hint} per risolvere ambiguità di overloading.
 
-In questa fase vige il vincolo architetturale più cruciale e
-rigoroso dell'intero sistema: il modello linguistico è obbligato a fornire
-il metodo nella sua interezza, inclusivo di firma, parentesi graffe
-e intero corpo logico. La generazione di patch sotto forma
-di classici diff unificati o frammenti parziali è categoricamente vietata,
-un imperativo che viene ribadito sia nel prompt di sistema
-(\texttt{"Provide the COMPLETE corrected method"}) sia nella definizione dello strumento
-stesso.
-
-Questa scelta di design, all'apparenza dispendiosa in termini di token
-generati, è sorretta da tre motivazioni profonde e imprescindibili per
-la robustezza di \texttt{HybridRepair}:
+In questa fase vige il vincolo più rigoroso del sistema: il modello deve fornire il metodo nella
+sua interezza (firma, graffe e corpo). Diff unificati o frammenti parziali sono vietati, come ribadito
+nel prompt di sistema (\texttt{"Provide the COMPLETE corrected method"}) e nella definizione dello strumento.
+Questa scelta, all'apparenza dispendiosa in token, è sorretta da tre motivazioni:
 
 \begin{description}
-    \item[Completezza sintattica garantita:]I sistemi basati su diff testuali (\textit{raw diffs}) 
-    si rivelano altamente fragili quando pilotati da modelli linguistici. Sebbene strumenti 
-    standard come \texttt{patch} o \texttt{git apply} siano concepiti per gestire l'evoluzione 
-    del codice, gli LLM faticano a generare righe di contesto esatte e a rispettare 
-    rigorosamente gli spazi di indentazione, incorrendo frequentemente in allucinazioni di tipo 
-    strutturale \cite{zhang2024llmhallucinations}. In un ciclo iterativo, un diff generato 
-    con un contesto testuale imperfetto provoca il fallimento immediato dell'applicazione della patch.
-    Al contrario, vincolare il modello a riscrivere e sostituire il metodo difettoso nella sua interezza 
-    sposta il dominio del problema dalla cruda manipolazione testuale alla sostituzione semantica, un approccio 
-    validato da architetture state-of-the-art come \textit{ChatRepair} \cite{xia2023chatrepair}. 
-    Un metodo rappresenta un blocco logico coeso e definito da una firma precisa; delegarne la sostituzione a 
-    livello di albero sintattico (AST), come esplorato dai recenti paradigmi \textit{semantics-aware} \cite{pabba2025semagent}, 
-    elimina le ambiguità legate al conteggio delle righe e alla formattazione spaziale. Questa strategia garantisce un 
-    tasso di successo nell'applicazione della patch nettamente superiore rispetto ai tradizionali diff riga per riga, 
-    risultando sempre coerente e riapplicabile.
+    \item[Completezza sintattica garantita:] I diff testuali sono fragili quando pilotati da LLM: i
+    modelli faticano a generare righe di contesto esatte e a rispettare l'indentazione, incorrendo in
+    allucinazioni strutturali \cite{zhang2024llmhallucinations}, e in un ciclo iterativo un contesto
+    imperfetto fa fallire subito l'applicazione. Riscrivere il metodo per intero sposta il problema dalla
+    manipolazione testuale alla sostituzione semantica a livello di AST \cite{pabba2025semagent}, eliminando
+    le ambiguità di conteggio righe e formattazione, con un tasso di successo superiore ai diff riga per
+    riga \cite{xia2023chatrepair}.
 
-    \item[Compatibilità con Tree-sitter:] L'infrastruttura di manipolazione del codice (\texttt{ast\_applier.py})
-    non opera sul testo in maniera lineare, bensì sfrutta il
-    \textit{Concrete Syntax Tree} (CST) generato da Tree-sitter. L'algoritmo di Tree-sitter
-    individua il nodo esatto che modella il metodo (tipicamente un
-    nodo \texttt{method\_declarati}\\\texttt{on} o \texttt{constructor\_declaration}) e isola il suo \textit{text span},
-    ovvero le coordinate esatte di inizio e fine del blocco
-    logico. Per sostituire chirurgicamente quel \textit{text span} nell'albero sintattico, l'input
-    iniettato deve obbligatoriamente essere un metodo Java sintatticamente completo e
-    autonomo. Fornire frammenti isolati causerebbe la rottura formale dell'albero.
+    \item[Compatibilità con Tree-sitter:] L'infrastruttura di manipolazione (\texttt{ast\_applier.py}) opera
+    sul \textit{Concrete Syntax Tree} (CST) di Tree-sitter, individuando il nodo del metodo (\texttt{method\_declaration}
+    o \texttt{constructor\_declaration}) e isolandone il \textit{text span}. Per sostituire quel text span l'input
+    deve essere un metodo Java completo e autonomo: frammenti isolati romperebbero l'albero.
 
-   \item[Prevenzione di patch parziali:] Una ben nota limitazione dei Large
-    Language Models nel \textit{coding} è la tendenza a fornire risposte
-    ``pigre'' o iper-focalizzate \cite{zhang2024llmhallucinations}. Se istruiti a generare solo la modifica,
-    i modelli tendono a concentrarsi unicamente sulla riga esatta dell'errore
-    (ad esempio, inserendo un controllo \texttt{if (obj != null)}), ma
-    trascurano spesso di bilanciare le parentesi graffe di chiusura a
-    fine metodo, o dimenticano di rilocare l'inizializzazione di variabili dichiarate
-    decine di righe prima. Imponendo l'onere di generare il codice
-    dell'intero metodo, il sistema forza il modello a mantenere nel
-    suo orizzonte di attenzione globale l'intera struttura logica, riducendo drasticamente
-    il rischio di errori di scope o sintassi sbilanciata \cite{xia2023chatrepair}.
+   \item[Prevenzione di patch parziali:] Gli LLM tendono a risposte ``pigre'' o iper-focalizzate
+    \cite{zhang2024llmhallucinations}: istruiti a generare solo la modifica, si concentrano sulla riga
+    dell'errore (es. un \texttt{if (obj != null)}) ma trascurano il bilanciamento delle graffe o la
+    rilocazione di variabili dichiarate altrove. Imporre la generazione dell'intero metodo mantiene la
+    struttura logica nell'orizzonte di attenzione del modello, riducendo errori di scope e sintassi
+    sbilanciata \cite{xia2023chatrepair}.
 \end{description}
 
 \subsubsection{La Fase COMPILE: Feedback Deterministico dal Compilatore}
@@ -542,18 +422,12 @@ al codice sorgente tramite l'AST, l'agente transita nella fase
 \texttt{COMPILE}, che rappresenta il primo vero ``oracolo deterministico''
 dell'intero ciclo di riparazione.
 
-In questa fase emerge una dicotomia fondamentale tra la
-natura dell'agente generativo e quella degli strumenti di validazione.
-Il giudizio di un \textit{Large Language Model}  in
-merito alla correttezza del codice prodotto è di sua natura probabilistico:
-il modello genera la sequenza di token statisticamente più
-plausibile, ma rimane vulnerabile ad allucinazioni logiche, sviste sintattiche
-o errori legati ai tipi di dato. Al contrario,
-il compilatore Java (\texttt{javac}) opera come un sistema formale
-rigoroso, implementando in modo esatto la grammatica del linguaggio.
-Il suo verdetto è binario e inappellabile: la patch
-risulta sintatticamente valida sotto il profilo della
-tipizzazione statica, oppure viene rifiutata.
+In questa fase emerge la differenza tra l'agente generativo e gli strumenti di
+validazione. Il giudizio dell'LLM sulla correttezza del codice è probabilistico
+e vulnerabile ad allucinazioni e sviste sintattiche; il compilatore \texttt{javac},
+al contrario, applica in modo esatto la grammatica del linguaggio e dà un verdetto
+binario: la patch è valida sotto il profilo della tipizzazione statica, oppure
+viene rifiutata.
 
 L'interazione tra l'agente e questo oracolo avviene invocando lo
 strumento \texttt{compile\_check}. Sebbene l'implementazione completa si appoggi al modulo
@@ -589,17 +463,11 @@ Il modello GPT-4o, ampiamente addestrato su log di compilazione,
 riga da questa stringa per risalire al punto esatto
 del fallimento.
 
-Questo meccanismo di feedback innesca quello che viene definito
-ciclo di \textit{retry inline} (\texttt{PATCH} $\rightarrow$ \texttt{COMPILE} $\rightarrow$ \texttt{PATCH}). Se
-la compilazione fallisce, il sistema non considera l'intero tentativo
-di riparazione come concluso. Al contrario, il messaggio di
-errore viene reiniettato nel contesto conversazionale dell'agente. L'LLM analizza
-l'errore e tenta di correggere la propria patch nello
-stesso round, generando una nuova invocazione ad \texttt{apply\_ast\_patch}. Questo
-micro-ciclo iterativo consuma il budget dei round a disposizione
-(\texttt{max\_tool\_rounds}), ma permette all'agente di affinare e correggere sviste
-sintattiche minori senza dover scartare l'intera strategia risolutiva o
-ripartire da zero.
+Questo feedback innesca il ciclo di \textit{retry inline} (\texttt{PATCH} $\rightarrow$ \texttt{COMPILE} $\rightarrow$ \texttt{PATCH}):
+se la compilazione fallisce, il messaggio di errore viene reiniettato nel contesto e l'agente corregge la
+patch nello stesso round con una nuova invocazione ad \texttt{apply\_ast\_patch}. Il micro-ciclo consuma il
+budget di round (\texttt{max\_tool\_rounds}) ma permette di correggere sviste sintattiche minori senza
+scartare l'intera strategia.
 
 \subsubsection{La Fase TEST: Verifica Semantica via Suite JUnit}
 \label{subsubsec:3.4.2.5}
@@ -672,20 +540,11 @@ fornendo preziose indicazioni per i tentativi futuri.
 
 \subsubsection{Il Meccanismo di Retry: Schedule di Temperatura e Adattamento}
 \label{subsubsec:3.4.2.6}
-Quando la fase \texttt{TEST} fallisce, rivelando che la patch
-prodotta non risolve il problema o introduce regressioni, il
-ciclo di riparazione non si interrompe immediatamente in un
-fallimento. Al contrario, la Macchina a Stati Finiti (FSM)
-entra nella fase transizionale di \texttt{RETRY}, un momento di
-riorganizzazione strategica che prepara il sistema a un nuovo
-tentativo.
-
-Per evitare di ricadere negli stessi errori, questo meccanismo
-di retry non si limita a lanciare una nuova
-esecuzione casuale, ma si fonda su tre pilastri 
-di adattamento: una modulazione adattiva della temperatura del modello,
-l' isolamento del workspace e l'iniezione della memoria
-conversazionale dei fallimenti pregressi.
+Quando la fase \texttt{TEST} fallisce, il ciclo non si interrompe: la FSM entra
+nella fase transizionale di \texttt{RETRY}, che prepara un nuovo tentativo. Per
+evitare di ricadere negli stessi errori, il meccanismo di retry si fonda su tre
+pilastri: una modulazione adattiva della temperatura del modello, l'isolamento
+del workspace e l'iniezione della memoria conversazionale dei fallimenti pregressi.
 
 \paragraph{1. Schedule di Temperatura Adattiva}
 Il primo pilastro governa la parametrizzazione del \textit{Large Language Model}.
@@ -704,25 +563,16 @@ La scelta di questi valori specifici (\texttt{0.1}, \texttt{0.2} e
 \texttt{0.4}) risponde a una logica di esplorazione calibrata:
 
 \begin{description}
-    \item[\texttt{0.1} (Primo tentativo):] Una temperatura molto bassa forza il modello
-    in un regime altamente deterministico. Questo favorisce la generazione
-    dei token statisticamente più probabili dato il contesto. L'assunto
-    è che, per bug ben diagnosticati dalla Fase 1,
-    la soluzione più ovvia generata al primo colpo sia
+    \item[\texttt{0.1} (Primo tentativo):] Una temperatura bassa forza un regime deterministico, che
+    favorisce i token più probabili; per bug ben diagnosticati dalla Fase 1, la soluzione più ovvia è
     spesso quella corretta.
 
-    \item[\texttt{0.2} (Secondo tentativo):] A seguito di un primo fallimento logico,
-    il sistema innalza lievemente la temperatura. Questo delta introduce
-    una marginale diversità semantica, permettendo all'agente di esplorare approcci
-    algoritmici alternativi, ma restando sufficientemente conservativo da non compromettere
-    la coerenza logica della generazione.
+    \item[\texttt{0.2} (Secondo tentativo):] Dopo un primo fallimento, l'innalzamento introduce una
+    marginale diversità semantica per esplorare approcci alternativi, restando conservativo.
 
-    \item[\texttt{0.4} (Terzo tentativo):] Nel tentativo finale, il valore \texttt{0.4}
-    abilita una diversificazione marcata. Questa ``creatività'' algoritmica è necessaria
-    per sfuggire agli eventuali \textit{local minima} della distribuzione generativa
-    (dove il modello continua a proporre varianti dello stesso
-    codice errato), pur mantenendosi entro un regime di rigore
-    formale che preserva la correttezza della sintassi.
+    \item[\texttt{0.4} (Terzo tentativo):] Nel tentativo finale abilita una diversificazione marcata, utile
+    a sfuggire ai \textit{local minima} (dove il modello ripropone varianti dello stesso codice errato),
+    pur preservando la correttezza sintattica.
 \end{description}
 
 In aggiunta, il parametro \texttt{COMPILE\_ERROR\_TEMP\_DOWNSHIFT} introduce un'ottimizzazione adattiva reattiva:
@@ -755,16 +605,10 @@ def _create_patched_copy(self, attempt_num: int) -> Path:
     return patched_dir
 \end{lstlisting}
 
-L'uso della libreria \texttt{shutil.copytree()} realizza una copia profonda e
-ricorsiva dell'intera gerarchia del progetto target. Questa operazione è
-vitale per la robustezza dell'agente: essa garantisce che
-ogni nuovo tentativo parta da uno stato immacolato (il
-file difettoso originale), azzerando completamente il rischio che patch
-fallite, parziali o scorrette apportate in tentativi precedenti possano
-contaminare le iterazioni successive. Inoltre, preservando in directory separate
-(\texttt{attempt\_1}, \texttt{attempt\_2}, ecc.) lo stato del codice per ogni
-iterazione, si fornisce un artefatto inestimabile per l'ispezione \textit{post-hoc}
-e il debugging del processo di riparazione.
+\texttt{shutil.copytree()} realizza una copia profonda e ricorsiva del progetto target, garantendo che
+ogni tentativo parta dal file difettoso originale, senza che patch fallite di tentativi precedenti
+contaminino le iterazioni successive. Conservare in directory separate (\texttt{attempt\_1}, \texttt{attempt\_2},
+ecc.) lo stato di ogni iterazione fornisce inoltre un artefatto utile all'ispezione \textit{post-hoc}.
 
 \paragraph{3. Copia Impostata degli Errori Precedenti}
 Il terzo pilastro è rappresentato dalla memoria a breve
@@ -773,17 +617,13 @@ delegata a un modulo specifico.
 \newpage
 \subsubsection{La Memoria Conversazionale: \texttt{conversation\_store.py}}
 \label{subsubsec:3.4.2.7}
-L'evoluzione dell'\textit{Automated Program Repair} basato su Large Language Models
-ha evidenziato un limite architetturale nei sistemi multi-tentativo
-di prima generazione: l'assenza di ritenzione dello storico tra
-iterazioni successive. Ogni nuovo tentativo ricominciava fornendo al modello
-il medesimo prompt iniziale (sorgente del bug e istruzioni),
-senza comunicare quali patch fossero già state tentate né
-perché fossero fallite. Questo approccio ``smemorato'' portava inevitabilmente alla
-comparsa del cosiddetto \textit{loop sterile}: il modello, deterministico per natura
-in assenza di variazioni di prompt sostanziali, rigenerava ossessivamente
-la medesima patch (o sue varianti insignificanti) a ogni
-tentativo, polverizzando il budget computazionale senza apportare alcun progresso.
+I sistemi APR multi-tentativo di prima generazione soffrivano di un limite:
+l'assenza di ritenzione dello storico tra iterazioni. Ogni tentativo ricominciava
+dal medesimo prompt iniziale, senza comunicare quali patch fossero già state
+tentate né perché fossero fallite. Questo approccio ``smemorato'' produceva il
+cosiddetto \textit{loop sterile}: in assenza di variazioni sostanziali del prompt,
+il modello rigenerava la stessa patch a ogni tentativo, consumando il budget
+computazionale senza progressi.
 
 Per scardinare questo loop sterile, \texttt{HybridRepair} adotta ed estende
 il paradigma presente in \textit{ChatRepair}\cite{xia2023chatrepair}. Questo schema prevede che la storia
@@ -808,15 +648,10 @@ def save(self, attempt_num: int, messages: list):
             f.write(json.dumps(msg) + "\n")
 \end{lstlisting}
 
-La scelta del formato JSONL in sostituzione a
-un monolitico array JSON classico non è puramente estetica,
-ma strutturale. Poiché ogni messaggio (composto dal proprio ruolo,
-contenuto e chiamate agli strumenti) è un record isolato
-su una riga testuale autonoma, eventuali interruzioni repentine del
-processo, come uno spegnimento anomalo o un'eccezione di timeout
-severa, non corromperanno in alcun modo i messaggi scritti
-precedentemente. In un array JSON standard, il mancato bilanciamento
-della parentesi quadra di chiusura corromperebbe invece l'intero file.
+La scelta del JSONL al posto di un array JSON monolitico è strutturale: poiché ogni messaggio (ruolo,
+contenuto e chiamate agli strumenti) è un record isolato su una riga, un'interruzione del processo non
+corrompe i messaggi già scritti, mentre in un array JSON la parentesi di chiusura mancante invaliderebbe
+l'intero file.
 
 Quando l'agente sta per iniziare il tentativo $k+1$, il
 sistema interroga il \texttt{conversation\_store.py} per costruire il ponte cognitivo
@@ -842,20 +677,9 @@ def get_failure_summary(self) -> str:
     return summary
 \end{lstlisting}
 
-La stringa risultante da questo costrutto invece di chiedere genericamente al
-modello di ``cercare un'altra via'', esplicita esattamente
-quale azione ha compiuto l'assistente nell'ultimo messaggio utile del
-tentativo fallito e quale errore ha scatenato.
-
-La chiave di volta di questa architettura risiede nella
-testata del messaggio: \texttt{"DO NOT REPEAT THESE APPROACHES"}. Questa
-istruzione agisce da meccanismo di \textit{negative prompting} forte. Nei
-modelli neurali come GPT-4o, fornire esempi espliciti in combinazione
-a un imperativo negativo penalizza pesantemente le distribuzioni di
-probabilità di sequenze logiche somiglianti al testo negato. Mettendo
-l'agente faccia a faccia con la prova inconfutabile del
-proprio precedente fallimento algoritmico, lo si obbliga a intraprendere
-diramazioni di ragionamento inesplorate, cancellando definitivamente il problema del
-loop sterile e rendendo le iterazioni di \texttt{HybridRepair} effettivamente
-progressive.
+Invece di chiedere genericamente di ``cercare un'altra via'', la stringa esplicita quale azione ha
+compiuto l'assistente nell'ultimo messaggio del tentativo fallito e quale errore ha scatenato.
+La testata \texttt{"DO NOT REPEAT THESE APPROACHES"} agisce da \textit{negative prompting} forte: fornire
+esempi espliciti con un imperativo negativo penalizza le sequenze simili al testo negato, spingendo
+l'agente verso ragionamenti inesplorati e rendendo le iterazioni effettivamente progressive.
 
