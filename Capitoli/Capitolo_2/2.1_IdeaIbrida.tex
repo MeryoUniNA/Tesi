@@ -1,7 +1,7 @@
 \section{L'idea: unire logica e intelligenza artificiale}
 
 Come abbiamo visto nel capitolo precedente, il vero limite dei moderni sistemi di
-riparazione automatica del codice (APR) non è la mancanza di ``creatività'' nel generare
+riparazione automatica del codice non è la mancanza di ``creatività'' nel generare
 soluzioni, ma la mancanza di una \textbf{guida rigorosa}. Quando lasciamo che un Large Language
 Model lavori da solo, senza vincoli precisi, finisce per inventare parti di codice inesistenti
 (allucinazioni) o per produrre soluzioni che funzionano solo in apparenza (overfitting).
@@ -18,26 +18,18 @@ e quello neurale/LLM non sono in competizione, ma \textbf{complementari}. Ciascu
 Il principio fondamentale di HybridRepair è una netta \textbf{separazione dei compiti}:
 
 \begin{quote}
-\textbf{L'analisi logica si occupa di trovare la causa del problema (diagnosi); l'LLM si occupa di scrivere il codice che lo risolve (sintesi).}
+\textbf{L'analisi logica si occupa di trovare la causa del problema (diagnosi) mentre l'LLM si occupa di scrivere il codice che lo risolve (sintesi).}
 \end{quote}
-
-Non si tratta di un semplice compromesso, ma di una scelta motivata dalla natura diversa
-dei due compiti.
 
 \textbf{La diagnosi.} Capire da dove arriva un valore \texttt{null}, seguire il
 percorso di un errore attraverso più funzioni e individuare il punto esatto in cui il
 programma va in crash richiede un rigore logico e deterministico. Sono garanzie che solo
-la programmazione logica (come Prolog) può offrire: un LLM, per come è costruito, non può
-assicurare questo livello di precisione.
+la programmazione logica (come Prolog) può offrire.
 
 \textbf{La sintesi.} Una volta che sappiamo con certezza \textit{cosa}
 correggere, il problema diventa \textit{come} scriverlo in codice Java pulito, che rispetti lo
 stile del progetto e superi i test automatici. Qui gli LLM sono insuperabili: comprendono
 il contesto e generano codice flessibile con grande efficacia.
-
-In sintesi, HybridRepair non chiede all'LLM di indovinare la causa del bug esplorando il
-codice alla cieca, e non chiede al motore logico di scrivere codice Java. Ciascun componente
-si occupa di ciò in cui è davvero competente.
 
 \subsection{L'approccio ibrido in pratica: l'esempio Closure-2}
 
@@ -140,41 +132,3 @@ Supera i test? & Sì & Sì \\
 Questo esempio mostra un punto fondamentale: la differenza tra una patch che ``sembra giusta''
 e una che ``è giusta'' non dipende da quanto è intelligente l'IA, ma dalla \textbf{qualità delle
 informazioni} che le forniamo.
-
-\subsection{La pipeline in tre fasi: uno sguardo d'insieme}
-
-Questa filosofia si traduce in un'architettura software organizzata in tre fasi sequenziali,
-come una catena di montaggio:
-
-\begin{figure}[h]
-\centering
-\begin{tikzpicture}[
-    node distance=1.2cm,
-    block/.style={rectangle, draw, fill=gray!10, text width=4cm, align=center, rounded corners, minimum height=1.5cm, font=\small},
-    arrow/.style={thick,->,>=stealth}
-]
-\node (oracle) [block] {\textbf{1. FaultOracle}\\(L'Oracolo dei Guasti)\\Analisi puramente logica};
-\node (reason) [block, right=0.8cm of oracle] {\textbf{2. SpecReason}\\(Il Ragionatore)\\Ponte Logica-Codice};
-\node (agent) [block, right=0.8cm of reason] {\textbf{3. PatchAgent}\\(L'Agente Programmatore)\\Sintesi e Validazione};
-
-\draw [arrow] (oracle) -- (reason);
-\draw [arrow] (reason) -- (agent);
-\end{tikzpicture}
-\caption{Pipeline a tre livelli di HybridRepair.}
-\end{figure}
-
-In estrema sintesi, le tre fasi hanno questi ruoli:
-
-\begin{itemize}
-    \item \textbf{FaultOracle} --- la componente puramente logica (Prolog). Trova la causa del bug
-            in modo deterministico e ne fornisce un referto inequivocabile, senza alcun intervento dell'IA.
-    \item \textbf{SpecReason} --- il ponte tra la logica e il codice. Qui l'LLM entra in gioco, ma
-            \textit{non scrive ancora codice}: ragiona sul problema e produce una specifica di riparazione
-            in linguaggio naturale.
-    \item \textbf{PatchAgent} --- la fase finale. Partendo dalla specifica e da un contesto pulito,
-            l'LLM scrive la patch, la applica, la compila e la testa, correggendosi in caso di errore.
-\end{itemize}
-
-L'idea portante è che l'IA non viene mai usata per investigare le cause del bug (dove sarebbe
-inaffidabile), ma soltanto per tradurre in codice verità già dimostrate dalla logica. Il
-Capitolo~\ref{cap:architettura} dettaglia il funzionamento interno di ciascuna delle tre fasi.

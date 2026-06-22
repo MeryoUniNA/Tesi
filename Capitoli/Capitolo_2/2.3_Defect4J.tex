@@ -4,18 +4,13 @@
 L'ultimo elemento di contesto necessario prima di affrontare l'architettura riguarda i \textit{dati}
 su cui HybridRepair viene sviluppato e messo alla prova. Un sistema di riparazione automatica ha senso
 solo se valutato su difetti \emph{reali}, riproducibili e confrontabili con quelli usati dagli altri
-lavori della letteratura. Per questo motivo si è scelto \textbf{Defects4J} \cite{just2014defects4j},
-oggi lo standard \textit{de facto} per la valutazione delle tecniche di \textit{Automated Program Repair}
-in ambito Java.
+lavori della letteratura, per questo motivo si è scelto \textbf{Defects4J} \cite{just2014defects4j}.
 
-\subsection{Che cos'è Defects4J}
+\subsection{Che cos'è Defects4J?}
 
 Defects4J è una raccolta curata di \textit{bug} reali, estratti dalla storia di sviluppo di progetti
 \textit{open source} Java molto noti (tra cui JFreeChart, Google Closure Compiler, Apache Commons Lang,
-Apache Commons Math e Jackson). Ogni difetto non è artificiale né iniettato a tavolino, ma corrisponde
-a un problema effettivamente verificatosi e successivamente corretto dagli sviluppatori del progetto.
-Questa caratteristica è ciò che rende il benchmark credibile: misurare un sistema APR su bug sintetici
-direbbe poco sulla sua reale utilità, mentre Defects4J riproduce la complessità del software industriale.
+Apache Commons Math e Jackson).
 
 Per ciascun difetto, il \textit{framework} mette a disposizione un ambiente di esecuzione riproducibile
 e, in particolare, quattro elementi fondamentali:
@@ -65,7 +60,3 @@ descritta nei capitoli seguenti:
     riferimento, utile per un confronto qualitativo tra la correzione generata e quella umana.
 \end{itemize}
 
-Avere chiaro fin da ora che cosa sia Defects4J, come siano strutturati i suoi difetti e quale
-sottoinsieme venga impiegato è il presupposto necessario per seguire i capitoli successivi, nei quali
-i singoli bug (a partire dal già citato \texttt{Closure-2}) verranno richiamati come esempi concreti
-del funzionamento del sistema.
