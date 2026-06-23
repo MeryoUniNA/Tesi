@@ -1,37 +1,123 @@
-\section{Panoramica di Sistema: Il Diagramma di Flusso delle 3 Fasi}
-\subsection{Introduzione Architetturale} 
-Il panorama dell'\textit{Automated Program Repair} è storicamente dominato da una dicotomia: 
-da un lato, gli approcci basati su logica formale e analisi simbolica, eccellenti nella precisione 
-diagnostica ma limitati nella capacità di sintetizzare codice complesso; dall'altro, i recenti sistemi 
-basati su \textit{Large Language Models} (LLM), dotati di straordinarie capacità generative ma inclini 
-a introdurre allucinazioni logiche e modifiche non semanticamente valide. In questo contesto, HybridRepair 
-si configura come un sistema APR progettato attorno a un principio cardine dell'Ingegneria 
-del Software: il rigoroso disaccoppiamento architetturale tra l'inferenza deterministica delle cause e la 
-variabilità stocastica della generazione di codice.
+\section{Obiettivi e requisiti del sistema}
+\label{sec:obiettivi_requisiti}
+I capitoli precedenti hanno individuato il nodo critico del problema --- l'incapacità degli approcci
+APR tradizionali e degli LLM privi di guida formale di affrontare la natura inter-procedurale delle
+\textit{NullPointerException} --- e hanno indicato nell'ibridazione neuro-simbolica la direzione di
+soluzione. Prima di descrivere come questa direzione si materializzi in un'architettura concreta, è
+necessario operazionalizzare l'obiettivo generale in obiettivi di dettaglio verificabili e nei requisiti
+che lo strumento realizzato deve soddisfare. Tali obiettivi e requisiti costituiscono il riferimento
+rispetto al quale, nel seguito del capitolo, verranno motivate le scelte architetturali e, nel
+Capitolo~\ref{cap:sperimentazione}, valutati i risultati sperimentali.
 
-Il termine "ibrido" definisce specificamente una natura neuro-simbolica: una componente simbolica fondata 
-su LogicFL e Prolog viene delegata alla diagnosi strutturata e ripetibile del difetto, mentre una 
-componente neurale (implementata tramite GPT-4 via Azure OpenAI) traduce tale diagnosi in conoscenza 
-operativa e, infine, in codice sorgente corretto. Questa sinergia supera i limiti derivanti dai singoli 
-approcci: la logica formale ancora il ragionamento probabilistico a verità inconfutabili del programma, 
-riducendo drasticamente lo spazio di ricerca e garantendo che l'intervento del LLM sia sempre mirato e 
-semanticamente fondato.
+\subsection{Obiettivi di dettaglio}
+A partire dall'obiettivo generale --- la riparazione automatica di difetti NPE reali guidata da una
+diagnosi formale --- la ricerca persegue i seguenti obiettivi specifici:
+\begin{itemize}
+    \item[\textbf{O1}] \textbf{Riparazione \textit{fully-automated} di NPE reali.} Risolvere, senza
+    alcun intervento umano nel ciclo, \textit{bug} di tipo \textit{NullPointerException} estratti dal
+    \textit{benchmark} standard Defects4J, a partire dal solo identificatore del difetto.
+    \item[\textbf{O2}] \textbf{Disaccoppiamento tra diagnosi e generazione.} Separare nettamente
+    l'inferenza deterministica delle cause dalla generazione stocastica del codice, così da contenere
+    le allucinazioni logiche del modello e mantenere mirato e semanticamente fondato il suo intervento.
+    \item[\textbf{O3}] \textbf{Tracciabilità e spiegabilità della diagnosi.} Garantire che il processo
+    diagnostico sia sempre esplicabile, ancorando il ragionamento a regole logiche (Prolog) verificabili
+    e ripetibili anziché a sole euristiche probabilistiche.
+    \item[\textbf{O4}] \textbf{Generazione vincolata a specifiche inequivocabili.} Fornire all'LLM una
+    specifica di riparazione priva di ambiguità e ancorata alle sole API realmente disponibili,
+    riducendo lo spazio di ricerca e prevenendo la sintesi di codice plausibile ma logicamente scorretto.
+\end{itemize}
 
-L'obiettivo principale del sistema è la riparazione in modalità \textit{fully-automated} di \textit{bug} NPE Java 
-reali, estratti dal \textit{benchmark} standard di settore Defects4J. A partire da un identificatore di 
-difetto (ad esempio, Codec-13), il sistema orchestra un'esecuzione attraverso tre fasi sequenziali, 
-nettamente separate e disaccoppiate: FaultOracle, SpecReason e PatchAgent. Ognuna di queste fasi possiede 
-responsabilità architetturali coese, interfacce di comunicazione tipizzate e confini ben delineati. Tale 
-segregazione assicura che la tracciabilità del processo diagnostico rimanga sempre esplicabile 
-(spiegabilità garantita dalle regole Prolog) e che il modello generativo riceva specifiche inequivocabili, 
-mitigando alla radice l'ambiguità inerente al linguaggio naturale.
+\subsection{Requisiti funzionali e non funzionali}
+Gli obiettivi precedenti si traducono in un insieme di requisiti che lo strumento deve soddisfare,
+distinti in funzionali (\textit{ciò che il sistema deve fare}) e non funzionali (\textit{le qualità con
+cui deve farlo}).
+
+\paragraph{Requisiti funzionali.}
+\begin{itemize}
+    \item[\textbf{RF1}] Localizzare il \textit{fault} nel codice sorgente Java e derivarne una diagnosi
+    causale strutturata, basata su analisi statica e ragionamento deduttivo, senza ricorso a modelli
+    generativi.
+    \item[\textbf{RF2}] Trasformare la diagnosi formale in una specifica di riparazione in linguaggio
+    naturale, ancorata al contesto API disponibile.
+    \item[\textbf{RF3}] Generare, applicare, compilare e testare la \textit{patch} operando su una
+    \textit{sandbox} isolata del sorgente.
+    \item[\textbf{RF4}] Apprendere dai tentativi falliti tramite un meccanismo di \textit{retry}
+    adattivo, fino al raggiungimento di una \textit{patch} valida o all'esaurimento del \textit{budget}.
+    \item[\textbf{RF5}] Produrre, a ogni fase, artefatti tracciabili e tipizzati che documentino l'esito e lo
+    storico del processo.
+\end{itemize}
+
+\paragraph{Requisiti non funzionali.}
+\begin{itemize}
+    \item[\textbf{RNF1}] \textbf{Automatismo.} L'intera \textit{pipeline}, dal \texttt{bug\_id} alla
+    \textit{patch}, deve eseguire senza intervento umano.
+    \item[\textbf{RNF2}] \textbf{Determinismo della diagnosi.} La fase di analisi causale deve essere
+    ripetibile e indipendente dalla variabilità stocastica del modello generativo.
+    \item[\textbf{RNF3}] \textbf{Modularità e disaccoppiamento.} Le fasi devono avere responsabilità
+    coese e confini ben delineati, in modo da essere testabili in isolamento e sostituibili.
+    \item[\textbf{RNF4}] \textbf{Interfacce tipizzate.} Le strutture dati che mediano le transizioni
+    fra le fasi devono essere fortemente tipizzate e centralizzate, per resistere agli errori di
+    disallineamento.
+    \item[\textbf{RNF5}] \textbf{Spiegabilità.} La catena diagnostica deve restare ispezionabile e
+    giustificabile in ogni suo passo.
+    \item[\textbf{RNF6}] \textbf{Riproducibilità.} L'esecuzione su un dato difetto deve essere
+    riproducibile, condizione necessaria alla validazione sperimentale.
+\end{itemize}
+
+
+\section{Panoramica architetturale del sistema}
+\label{sec:panoramica_architetturale}
+\subsection{Principi di progettazione}
+Coerentemente con la separazione tra diagnosi e sintesi argomentata nel Capitolo precedente e con gli
+obiettivi di disaccoppiamento, tracciabilità e generazione vincolata (O2--O4), l'architettura di
+HybridRepair traduce il principio neuro-simbolico in una struttura concreta: una componente simbolica
+(LogicFL su Prolog) presiede alla diagnosi deterministica del difetto, mentre una componente neurale
+(GPT-4 via Azure OpenAI) ne traduce l'esito in codice corretto. A partire da un identificatore di difetto
+(ad esempio, Codec-13), il sistema esegue tre fasi sequenziali e nettamente disaccoppiate FaultOracle,
+SpecReason e PatchAgent, ciascuna con responsabilità coese, interfacce tipizzate e confini ben
+delineati.
 
 
 \subsection{\textit{Pipeline} dei dati: input e output delle tre fasi}
-Per garantire che i moduli siano testabili in isolamento e sostituibili, l'intero flusso di informazioni
-intra-fase è governato da un contratto di interfaccia esplicito. Le strutture dati che mediano le transizioni 
-sono fortemente tipizzate e centralizzate nel modulo shared/models.py, realizzando un'architettura robusta e 
-resistente agli errori di disallineamento dei dati.
+Per garantire che i moduli siano testabili in isolamento e sostituibili, il passaggio di informazioni
+tra una fase e la successiva è governato da un contratto di interfaccia esplicito. Le strutture dati che
+mediano queste transizioni sono fortemente tipizzate e centralizzate in un unico modello dati condiviso,
+realizzando un'architettura robusta e resistente agli errori di disallineamento.
+
+La Figura~\ref{fig:architettura_pipeline} ne offre una visione d'insieme: le tre fasi sequenziali, gli
+artefatti tipizzati che le collegano e la natura simbolica o neurale  di ciascuna.
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}[
+        phase/.style={rectangle, draw, thick, rounded corners, minimum height=1.3cm, text width=3cm, align=center},
+        symbolic/.style={phase, fill=orange!15},
+        neural/.style={phase, fill=blue!8},
+        io/.style={rectangle, draw, dashed, rounded corners, minimum height=1.2cm, text width=2cm, align=center, fill=gray!8},
+        arrow/.style={-stealth, thick},
+        albl/.style={font=\footnotesize\ttfamily}
+    ]
+        \node (in)  [io]       at (0,0)      {\texttt{bug\_id}};
+        \node (f1)  [symbolic] at (4,0)      {\textbf{FaultOracle}\\[2pt]\scriptsize Fase 1 --- simbolica};
+        \node (f2)  [neural]   at (4,-2.9)   {\textbf{SpecReason}\\[2pt]\scriptsize Fase 2 --- neurale};
+        \node (f3)  [neural]   at (4,-5.8)   {\textbf{PatchAgent}\\[2pt]\scriptsize Fase 3 --- neurale};
+        \node (out) [io]       at (9.6,-5.8) {\textit{patch}\\ validata};
+
+        \draw [arrow] (in) -- (f1);
+        \draw [arrow] (f1) -- (f2) node[midway, right, albl] {FaultReport};
+        \draw [arrow] (f2) -- (f3) node[midway, right, albl, align=left] {RepairSpec\\+ Ingredients};
+        \draw [arrow] (f3) -- (out) node[midway, above, albl] {RepairResult};
+
+        \draw [arrow] (f3.north west) to[out=160, in=200, looseness=2.5]
+            node[midway, left, font=\scriptsize] {retry adattivo} (f3.south west);
+    \end{tikzpicture}
+    \caption{Visione d'insieme dell'architettura a tre fasi di HybridRepair. In arancio la fase simbolica
+    deterministica (FaultOracle, basata su LogicFL/Prolog), in blu le fasi neurali generative (SpecReason,
+    ragionamento \textit{Chain-of-Thought}; PatchAgent, agente LLM a stati finiti con \textit{retry} in
+    \textit{sandbox}); le etichette sugli archi indicano gli artefatti tipizzati scambiati tra una fase e
+    la successiva.}
+    \label{fig:architettura_pipeline}
+\end{figure}
 
 
 La Tabella~\ref{tab:pipeline_io} riassume, per ciascuna delle tre fasi, le informazioni in ingresso, la

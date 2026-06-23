@@ -1,35 +1,114 @@
 \section{Fase 1 - FaultOracle e Localizzazione Causale}
 \label{sec:fase1}
 
-La prima fase dell'architettura HybridRepair è denominata \textbf{FaultOracle} e ha il compito di
-rispondere a una domanda analitica precisa: \textit{dove e perché} il programma difettoso produce
-un comportamento anomalo. Il termine ``oracolo'' è mutuato rigorosamente dalla teoria del software testing,
-ambito nel quale un oracolo è definito come un meccanismo formale o euristico capace di
-stabilire la correttezza di un output osservato rispetto alle specifiche attese; in questo contesto specifico,
-FaultOracle opera in qualità di vero e proprio \textbf{oracolo diagnostico}. Il suo scopo non è
-soltanto quello di rilevare il fallimento, bensì quello di emettere una rappresentazione strutturata della radice
-causale del difetto, un costrutto informativo essenziale che sarà successivamente consumato dalle fasi
-downstream della pipeline.
+La prima fase di HybridRepair, denominata \textbf{FaultOracle}, risponde a una
+domanda precisa: \textit{dove e perché} il programma difettoso produce un comportamento anomalo.
+Il termine ``oracolo'' è mutuato dalla teoria del software testing, dove indica un meccanismo capace
+di stabilire la correttezza di un output rispetto alle specifiche attese. FaultOracle opera qui come
+\textbf{oracolo diagnostico}: non si limita a rilevare il fallimento, ma emette una rappresentazione
+strutturata della radice causale del difetto, consumata dalle fasi successive della pipeline.
 
-Il motore di inferenza sottostante a FaultOracle è \textbf{LogicFL}, un sistema avanzato di \textit{fault localization}
-basato su ragionamento logico-deduttivo, interamente implementato in SWI-Prolog. L'originalità scientifica di LogicFL, qualora lo si
-ponga a confronto con gli approcci di localizzazione spettro-basati tradizionali ampiamente indagati in letteratura (quali
-Ochiai o Tarantula), risiede nella sua natura non puramente statistica. Mentre i localizzatori basati su
-spettro si limitano a produrre una lista di righe sospette calcolate su coefficienti di correlazione
-tra copertura del codice e fallimenti dei test, LogicFL costruisce esplicitamente delle \textit{catene causali}. Tali
-catene tracciano formalmente la propagazione spaziale e temporale di un valore anomalo (nello specifico, un
-riferimento \texttt{null}) dalla sua sorgente originaria fino al punto in cui si manifesta il crash a runtime.
-Questo processo deduttivo opera su una \textit{knowledge base} costantemente popolata da fatti
-Prolog, derivati sia dall'analisi statica della struttura del codice, sia dall'analisi dinamica
-dell'esecuzione dei casi di test. 
+Il motore di inferenza sottostante è \textbf{LogicFL} \cite{kim2024identifying}, un sistema di \textit{fault localization} basato
+su ragionamento logico-deduttivo, implementato in SWI-Prolog. A differenza dei localizzatori spettro-basati
+tradizionali, che producono una lista di righe sospette calcolate su coefficienti di
+correlazione tra copertura ed esiti dei test, LogicFL costruisce esplicitamente delle \textit{catene causali}:
+tracce formali della propagazione di un valore anomalo (un riferimento \texttt{null}) dalla sorgente
+originaria fino al crash a runtime. Il processo deduttivo opera su una \textit{knowledge base} di fatti
+Prolog, derivati dall'analisi statica della struttura del codice e dall'analisi dinamica dell'esecuzione dei test.
+\clearpage
+La Figura~\ref{fig:flusso_informativo} offre una visione d'insieme del flusso dei dati: dagli input grezzi
+(codice sorgente Java e test JUnit fallenti) fino all'oggetto \texttt{FaultReport} strutturato e consumato
+dalle fasi successive della pipeline.
+
+\enlargethispage{5cm}
+\begin{figure}[H]
+    \centering
+    \scalebox{0.90}{
+    \begin{tikzpicture}[
+        input/.style={ellipse, draw, thick, minimum width=3.8cm, minimum height=1cm,
+                      text width=3.2cm, align=center, fill=green!10},
+        process/.style={rectangle, draw, thick, rounded corners=3pt, minimum height=1.4cm,
+                        inner ysep=8pt, text width=4.5cm, align=center, fill=blue!10},
+        artifact/.style={cylinder, shape border rotate=90, aspect=0.3, draw, thick,
+                         minimum height=1.1cm, text width=3.8cm, align=center, fill=orange!10},
+        output/.style={ellipse, draw, thick, minimum width=3.8cm, minimum height=1cm,
+                       text width=3.2cm, align=center, fill=orange!25},
+        arrow/.style={-stealth, thick}
+    ]
+        % Input
+        \node (source) [input]   at (0,   0)   {Codice Sorgente Java};
+        \node (tests)  [input]   at (6,   0)   {Test JUnit Fallenti};
+
+        % Processi paralleli di analisi
+        \node (static)  [process] at (0,  -3.0) {\texttt{StaticAnalyzer}};
+        \node (dynamic) [process] at (6,  -3.0) {\texttt{DynamicAnalyzer}};
+
+        % Artefatti Prolog (knowledge base)
+        \node (pl) [artifact] at (3, -6.0) {\texttt{logic-fl.pl} \\ \texttt{code-facts.pl}};
+
+        % Motore di inferenza
+        \node (fl) [process] at (3, -9.0) {FaultLocalizer \\ (Motore SWI-Prolog)};
+
+        % Artefatti di output testuale
+        \node (txtout) [artifact] at (3, -12.0) {\texttt{root-cause.txt} \\ \texttt{fault\_locs.txt}};
+
+        % Parsing e grounding
+        \node (parser) [process] at (3, -15.0) {\texttt{logicfl\_parser.py}\\[2pt]+\\[2pt]\texttt{prolog\_grounding.py}};
+
+        % Output finale strutturato
+        \node (report) [output]  at (3, -18.0) {\texttt{FaultReport}};
+
+        % Frecce
+        \draw [arrow] (source)  -- (static);
+        \draw [arrow] (tests)   -- (dynamic);
+        \draw [arrow] (static)  -- (pl);
+        \draw [arrow] (dynamic) -- (pl);
+        \draw [arrow] (pl)      -- (fl);
+        \draw [arrow] (fl)      -- (txtout);
+        \draw [arrow] (txtout)  -- (parser);
+        \draw [arrow] (parser)  -- (report);
+    \end{tikzpicture}
+    }
+    \caption{Flusso dei dati di FaultOracle: dall'input grezzo all'oggetto \texttt{FaultReport}.
+             \textit{Legenda}: ellissi verdi = dati in ingresso; rettangoli = componenti software;
+             cilindri = artefatti su file; ellisse arancione = output strutturato.}
+    \label{fig:flusso_informativo}
+\end{figure}
+\clearpage
+
+\textbf{Esempio Guida: Il Bug Csv-4} \\
+Per rendere concreti i concetti astratti di FaultOracle, l'intera trattazione seguente utilizzerà come \textit{running example} il bug \textbf{Csv-4} dal dataset Defects4J. Questo difetto causa una \texttt{NullPointerException} nel progetto Apache Commons CSV quando si tenta di costruire una mappa a partire da header mai inizializzati. Le quattro righe che ci interessano sono:
+
+\begin{lstlisting}[language=Java]
+// org.apache.commons.csv.CSVParser
+
+// Nel costruttore: il campo viene riempito col risultato del metodo
+this.headerMap = this.initializeHeader();    // ASSEGNAZIONE (Riga 244)
+
+public Map<String, Integer> getHeaderMap() {
+    // CRASH (Riga 288): this.headerMap e' null
+    return new LinkedHashMap<String, Integer>(this.headerMap); 
+}
+
+private Map<String, Integer> initializeHeader() throws IOException {
+    Map<String, Integer> hdrMap = null; // ORIGINE (Riga 325)
+    /* ... se non ci sono header definiti, hdrMap resta null ... */
+    return hdrMap; // PROPAGAZIONE (Riga 351)
+}
+\end{lstlisting}
+
+Prima di qualunque formalismo, proviamo a ragionare come farebbe uno sviluppatore, \emph{all'indietro} a
+partire dal crash: il programma si interrompe a riga~288 perché \texttt{headerMap} è \texttt{null}; ma
+\texttt{headerMap} era stato riempito a riga~244 col risultato di \texttt{initializeHeader()}; quel metodo, a
+riga~351, restituisce \texttt{hdrMap}; e \texttt{hdrMap} era stato posto a \texttt{null} a riga~325.
+\textbf{Quella è l'origine.} Tutto ciò che LogicFL fa è automatizzare \emph{esattamente} questa risalita: i
+fatti e le regole Prolog delle pagine seguenti non sono che la codifica formale di questo ragionamento.
 
 \subsection{Il Motore LogicFL: Analisi Statica, Dinamica e Flusso Informativo}
 
 \subsubsection{Architettura a tre componenti}
-\enlargethispage{1.5cm}
-L'architettura di LogicFL è progettata secondo un pattern modulare e si articola in tre componenti
-distinti che operano in rigorosa sequenza procedurale. Ciascuno di questi moduli è implementato come una
-classe Java autonoma afferente al package \texttt{logicfl.analyzer.*} e risulta invocabile mediante un corrispondente script shell.
+L'architettura di LogicFL è modulare e si articola in tre componenti che operano in sequenza. Ciascun
+modulo è una classe Java del package \texttt{logicfl.analyzer.*}, invocabile tramite un corrispondente script shell.
 \begin{table}[H]
 \centering
 \small
@@ -44,538 +123,238 @@ classe Java autonoma afferente al package \texttt{logicfl.analyzer.*} e risulta 
 \end{tabularx}
 \end{table}
 
-L'esecuzione del componente finale della catena è orchestrata tramite il seguente blocco di invocazione bash:
-\begin{lstlisting}[language=bash]
-# localizer.sh
-java -Djava.library.path=/path/to/swipl/lib -cp logicfl.jar logicfl.analyzer.FaultLocalizer
-\end{lstlisting}
-
-L'invocazione del \texttt{FaultLocalizer} richiede imperativamente la presenza dell'ambiente SWI-Prolog equipaggiato con il bridge JPL
-(\textit{Java--Prolog Library}). Questa necessità tecnica deriva dal fatto che la classe Java istanzia direttamente il
-motore Prolog all'interno dello spazio di memoria della Java Virtual Machine (JVM), ponendovi interrogazioni (\textit{queries})
-attraverso le API JPL.
-
-La direttiva \texttt{-Djava.library.path} esplicitata nello script è strettamente necessaria affinché la JVM possa localizzare e
-caricare \texttt{libjpl.so}, ovvero la libreria nativa C/C++ responsabile di stabilire il canale di comunicazione bidirezionale
-tra il processo JVM e il processo SWI-Prolog. Questo meccanismo architetturale basato su JPL consente
-alla classe Java di eseguire tre operazioni cruciali: (i) caricare i file sorgente Prolog all'interno
-dell'ambiente di esecuzione, (ii) asserire dinamicamente nuovi fatti nella \textit{knowledge base}, e (iii) valutare le
-query interrogando il motore di inferenza, per poi raccogliere le soluzioni risultanti proiettandole su strutture
-dati native Java.
+Il \texttt{FaultLocalizer} gira su SWI-Prolog, istanziato dentro la JVM tramite il bridge JPL
+(\textit{Java--Prolog Library}).\footnote{Concretamente, la JVM carica la libreria nativa \texttt{libjpl.so}
+(direttiva \texttt{-Djava.library.path}), che apre un canale bidirezionale tra Java e SWI-Prolog.} Attraverso
+questo ponte la classe Java carica i file Prolog, vi asserisce dinamicamente nuovi fatti e valuta le query,
+raccogliendone le soluzioni in strutture dati native.
 
 \subsubsection{Analisi Statica: la Generazione dei Fatti Strutturali}
 
-Il primo componente del sistema, lo \texttt{StaticAnalyzer}, riceve in input il
-codice sorgente Java del programma difettoso. Il suo scopo è costruire una rappresentazione formale dell'Abstract
-Syntax Tree (AST) del programma, codificandola sotto forma di fatti Prolog. Questo specifico processo di
-traduzione sintattico-semantica è comunemente denominato \textit{code instrumentation} a livello di analisi statica: il programma sotto
-test non viene in alcun modo eseguito, ma la sua struttura lessicale, sintattica e relazionale
-subisce una trasformazione isomorfa in un insieme di clausole proprie della logica del primo ordine.
+Il primo componente, lo \texttt{StaticAnalyzer}, riceve il codice sorgente Java e ne costruisce una
+rappresentazione formale dell'Abstract Syntax Tree (AST), codificata come fatti Prolog. Il programma non
+viene eseguito: la sua struttura sintattica e relazionale è tradotta in clausole della logica del primo ordine
+(\textit{code instrumentation} statica). Il risultato sono i file \texttt{logic-fl.pl} e \texttt{code-facts.pl}, base
+strutturale della \textit{knowledge base}. Il vocabolario dei fatti copre gli elementi della semantica Java
+rilevanti per tracciare la propagazione dei valori \texttt{null}; la Tabella~\ref{tab:fatti_prolog} ne riassume
+i blocchi fondamentali.
 
-Il risultato tangibile di tale computazione è la produzione del file \texttt{logic-fl.pl} e \texttt{code-facts.pl}, i quali costituiscono la base strutturale essenziale della \textit{knowledge base} del sistema.
-Il vocabolario dei fatti Prolog prodotti è progettato per coprire con precisione gli elementi della semantica Java
-che risultano rilevanti per mappare la propagazione dei valori \texttt{null}. Si riportano e si commentano semanticamente
-di seguito gli 8 blocchi di fatti relazionali fondamentali generati:
 
-\textbf{1. \texttt{assign/3} --- Assegnazioni}
+\begin{table}[H]
+\centering
+\small
+\caption{I blocchi di fatti Prolog generati dall'analisi statica.}
+\label{tab:fatti_prolog}
+\begin{tabularx}{\textwidth}{@{}l >{\raggedright\arraybackslash}X@{}}
+\toprule
+\textbf{Predicato} & \textbf{Semantica} \\
+\midrule
+\texttt{assign/3} & Una variabile riceve il valore di un'espressione a una data riga. \\
+\texttt{method\_invoc/3} & Collega il risultato di una chiamata al metodo invocato; abilita il tracciamento inter-procedurale dei valori \texttt{null}. \\
+\texttt{argument/3} & Argomento effettivo passato in posizione $N$ a un'invocazione. \\
+\texttt{param/3} & Parametro formale in posizione $N$ nella firma del \textit{callee}; con \texttt{argument/3} mappa argomenti effettivi e parametri formali tra scope diversi. \\
+\texttt{return/3} & Espressione di ritorno di un metodo; usato per dedurre se un metodo può restituire \texttt{null}. \\
+\texttt{ref/3} & Dereferenziazione di un nome in un'espressione: punto d'ingresso per il rilevamento delle \textit{null dereference}. \\
+\texttt{class/2}, \texttt{method/2} & Metadati: nome pienamente qualificato della classe e intervallo di righe del metodo (\texttt{range/5}), consultati dagli algoritmi di ranking causale. \\
+\texttt{literal/6}, \texttt{name\_ref/4} & Valori costanti noti a compile-time (\texttt{null}, interi, stringhe) e tipizzazione del nome (\texttt{var}, \texttt{param}, \texttt{field}). \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Per dare concretezza al vocabolario della tabella, ecco come l'analisi statica codifica l'assegnazione e l'uso
+del campo \texttt{headerMap} in Csv-4:
+
 \begin{lstlisting}[language=Prolog]
-assign(v_r_207, dataset_utilities_tests_1_expr8, line(dataset_utilities_tests_1, 1275)).
-\end{lstlisting}
-Questo fatto logico afferma formalmente che la variabile locale identificata dall'atomo Prolog \texttt{v\_r\_207} riceve, a
-seguito di un'operazione di assegnamento, il valore prodotto dall'espressione \texttt{dataset\_utilities\_tests\_1\_expr8}. Tale operazione si verifica in
-corrispondenza della riga 1275 all'interno della classe denotata dall'identificatore \texttt{dataset\_utilities\_tests\_1}. La codifica del costrutto
-posizionale \texttt{line(ClassId, LineNum)} costituisce un riferimento spaziale univoco all'interno di un progetto software multi-file, risultando
-indispensabile per discriminare omonimie e collisioni di identificatori che si manifestano in classi differenti.
-
-\textbf{2. \texttt{method\_invoc/3} --- Invocazioni di Metodo}
-\begin{lstlisting}[language=Prolog]
-method_invoc(dataset_utilities_tests_1_expr8, m_iterate_domain_bounds_89, 
-             line(dataset_utilities_tests_1, 1275)).
-\end{lstlisting}
-Tale fatto codifica la risoluzione semantica di una chiamata procedurale: esso dichiara che l'espressione
-\texttt{dataset\_utilities\_tests\_1\_expr8} rappresenta il risultato materiale dell'invocazione del metodo identificato come \texttt{m\_iterate\_domain\_bounds\_89} alla riga specificata.
-Il valore restituito dalla procedura è identificato dall'atomo che funge da primo argomento del predicato.
-Sotto il profilo semantico, questo meccanismo abilita il motore di ragionamento logico a collegare il
-risultato di una chiamata al contesto del metodo chiamante, rendendo possibile il tracciamento formale della propagazione
-di valori \texttt{null} attraverso catene di invocazioni inter-procedurali.
-
-\textbf{3. \texttt{argument/3} e 4. \texttt{param/3} --- Argomenti di Invocazione e Parametri Formali}
-\begin{lstlisting}[language=Prolog]
-argument(v_d_205, 1, dataset_utilities_tests_1_expr8).
-param(v_d_205_formal, 1, m_iterate_domain_bounds_89).
-\end{lstlisting}
-Il fatto \texttt{argument/3} sancisce una relazione associativa: la variabile locale \texttt{v\_d\_205} è passata come primo
-(1) argomento effettivo all'interno dell'invocazione di metodo identificata da \texttt{dataset\_utilities\_tests\_1\_expr8}. L'arità e l'indicizzazione posizionale
-degli argomenti assumono un'importanza basilare al fine di allineare i parametri formali definiti in una
-firma di metodo con i valori concreti ricevuti durante l'esecuzione.
-In maniera del tutto simmetrica, \texttt{param/3} modella la firma del metodo analizzato dal lato del
-\textit{callee} (il ricevente della chiamata). Combinando la risoluzione di \texttt{param/3} con \texttt{argument/3}, l'interprete Prolog istanzia
-il mapping esatto tra argomenti effettivi e parametri formali, permettendo la propagazione coerente dei vincoli
-di nullità tra scope differenti.
-
-\textbf{5. \texttt{return/3} --- Espressioni di Ritorno}
-\begin{lstlisting}[language=Prolog]
-return(dataset_utilities_tests_1_literal5, m_iterate_domain_bounds_89, 
-       line(dataset_utilities_tests_1, 780)).
-\end{lstlisting}
-Questo predicato codifica sintatticamente la capacità del metodo \texttt{m\_iterate\_domain\_bounds\_89} di restituire il valore valutato
-dall'espressione \texttt{dataset\_utilities\_tests\_1\_literal5} in corrispondenza della riga 780. All'interno del file delle regole logiche (\texttt{npe-rules.pl}),
-questo costrutto è intensivamente sfruttato per determinare staticamente se un dato metodo possa o meno produrre
-un ritorno nullo (esaminando se il sub-grafo di controllo espone almeno un percorso di ritorno
-che produce \texttt{null} e un percorso alternativo che produce un valore istanziato).
-
-\textbf{6. \texttt{ref/3} --- Riferimenti a Nomi e Dereferenziazioni}
-\begin{lstlisting}[language=Prolog]
-ref(v_r_207, dataset_utilities_tests_1_expr10, line(dataset_utilities_tests_1, 1276)).
-\end{lstlisting}
-Questo fatto dichiara formalmente che l'entità nominata \texttt{v\_r\_207} subisce una \textit{dereferenziazione} (venendo utilizzata, per esempio,
-come \textit{receiver} di una chiamata o come argomento effettivo) all'interno dell'espressione \texttt{dataset\_utilities\_tests\_1\_expr10} situata alla
-riga 1276. Dal punto di vista diagnostico, questo predicato rappresenta il punto di ingresso analitico
-primario per il rilevamento delle \textit{null dereferences}. Se l'analisi incrociata dimostra che un nome possiede
-un valore \texttt{null} in un preciso istante di esecuzione e viene successivamente inglobato in un'espressione
-modellata da un fatto \texttt{ref}, si deduce con certezza l'occorrenza di un potenziale crash di
-tipo \texttt{NullPointerException} (NPE).
-
-
-
-\textbf{7. \texttt{class/2} e \texttt{method/2} --- Metadati Strutturali}
-\begin{lstlisting}[language=Prolog]
-class(dataset_utilities_1, 'org.jfree.data.general.DatasetUtilities').
-method(m_iterate_domain_bounds_89,
-       range(dataset_utilities_1, _, _, 770, 790)).
+assign(f_header_map_69, csvparser_1_expr20, line(csvparser_1, 244)).
+return(csvparser_1_expr23, m_get_header_map_61, line(csvparser_1, 288)).
+argument(f_header_map_69, 1, csvparser_1_expr23).
 \end{lstlisting}
 
-I predicati metadatistici forniscono informazioni sull'incapsulamento del codice sorgente. 
-Il predicato \texttt{class/2} associa un identificatore Prolog univoco al nome pienamente qualificato 
-della classe Java corrispondente. Il predicato \texttt{method/2} instaura invece un'associazione tra ogni
- identificatore univoco di metodo e il suo rispettivo intervallo di righe (inizio-fine) misurato 
- sul file sorgente originale, avvalendosi della struttura \texttt{range/5}. Questa nozione spaziale 
- è sistematicamente consultata dalla regola \texttt{find\_method/2} al fine di vincolare una data 
- istruzione (riga di codice) al blocco procedurale di appartenenza, requisito metodologico imprescindibile 
- per il corretto funzionamento degli algoritmi di ranking causale. 
- 
- Gli algoritmi di \textit{ranking} causale
-  ordinano le possibili cause radice di un errore in base alla loro utilità diagnostica. Il loro scopo è 
-  dare priorità ai veri difetti del codice da riparare, filtrando 
-  e scartando origini irrilevanti come i valori passati inizialmente dai file di test.
+Argomenti come \texttt{f\_header\_map\_69} o \texttt{csvparser\_1\_expr20} sono identificatori interni opachi
+generati dall'analizzatore: un prefisso ne segnala il tipo (\texttt{f\_} per i campi, \texttt{m\_} per i metodi,
+il suffisso \texttt{\_expr} per le espressioni) e un numero finale disambigua le occorrenze. Nel nostro caso
+\texttt{f\_header\_map\_69} è il campo \texttt{headerMap}, \texttt{csvparser\_1\_expr20} è l'espressione
+\texttt{this.initializeHeader()} che lo inizializza e \texttt{m\_get\_header\_map\_61} è il metodo
+\texttt{getHeaderMap}; ricondurre questi simboli ai rispettivi nomi Java leggibili sarà compito del
+\emph{Semantic Grounding} (Sezione~\ref{sec:grounding}). Ricorre inoltre, in quasi ogni fatto, il termine
+posizionale \texttt{line(ClassId, LineNum)}, che àncora l'evento a una precisa coppia (classe, riga): un
+riferimento univoco all'interno di un progetto multi-file, indispensabile per discriminare omonimie tra classi
+differenti.
 
-
-
-
-\textbf{8. \texttt{literal/6} e \texttt{name\_ref/4} --- Valori Letterali e Tipi di Nome}
-\begin{lstlisting}[language=Prolog]
-literal(dataset_utilities_tests_1_literal5, null, type_null, _, _, _).
-name_ref(v_r_207, var, type_Object, _).
-\end{lstlisting}
-Infine, il predicato \texttt{literal/6} lega un identificatore astratto a un valore costante noto a tempo di
-compilazione (come la parola chiave \texttt{null}, un intero o una stringa). Il predicato \texttt{name\_ref/4}, di
-converso, incapsula la tipizzazione semantica del nome Prolog in precise categorie: definisce \texttt{var} per le variabili
-locali, \texttt{param} per identificare i parametri formali passati a funzione, e \texttt{field} per i campi
-d'istanza o di classe (statici). La regola inferenziale \texttt{is\_var/1}, definita in \texttt{npe-rules.pl}, si appoggia integralmente
-a questo predicato per identificare dinamicamente quali entità del programma debbano essere considerate e tracciate
-come variabili in senso lato, ossia contenitori di memoria suscettibili di mutazione di stato.
+Per il resto, questi fatti descrivono soltanto la \emph{struttura} del codice: stabiliscono che
+\texttt{headerMap} viene assegnato a riga~244 e usato a riga~288, ma non dicono nulla sul fatto che a runtime
+valga davvero \texttt{null}. Quell'informazione arriva dall'analisi dinamica descritta di seguito; è solo la
+combinazione dei due tipi di fatto a fondare la deduzione del difetto.
 
 \subsubsection{Analisi Dinamica: la Generazione dei Fatti di Valore}
 
-Sebbene l'analisi statica provveda a generare una topologia esaustiva della struttura lessicale e sintattica del
-codice, essa risulta, per costruzione teorica, incompleta nell'indagine dei \textit{valori concreti} che le variabili
-assumono nello spazio degli stati durante l'evoluzione dell'esecuzione. Allo scopo di asserire in modo inconfutabile che
-un'espressione valuti effettivamente a \texttt{null} in un punto arbitrario del flusso di controllo durante il
-run di uno specifico test case fallente,  necessaria l'adozione di uno strumento di
-analisi dinamica.
+L'analisi statica descrive la struttura del codice ma, per costruzione, non conosce i \textit{valori concreti}
+che le variabili assumono durante l'esecuzione. Per asserire che un'espressione valuti effettivamente a
+\texttt{null} in un dato punto del flusso, durante il run di un test fallente, serve un'analisi dinamica.
 
-Tale adempimento è demandato al componente \texttt{DynamicAnalyzer}, il quale si avvale di una tecnica di \textit{code
-instrumentation} operante direttamente a livello di bytecode. La procedura prevede la compilazione del programma difettoso in
-bytecode Java, cui segue un processo di trasformazione on-the-fly (generalmente attuato tramite tool di \textit{probing} standard)
-finalizzato a intercettare sistematicamente le istruzioni di caricamento e memorizzazione; mediante questo strato di osservazione,
-i valori transitanti nelle variabili vengono registrati in un buffer temporale. L'epilogo di questo processo
-di monitoring si concretizza nell'aggiunta fattuale di predicati dinamici \texttt{val/3} in coda al file \texttt{logic-fl.pl}.
+Questo compito è demandato al \texttt{DynamicAnalyzer}, che lavora a livello di \emph{bytecode}: il codice Java
+viene compilato normalmente, dopodiché la JVM lo esegue con un agente che inietta istruzioni di osservazione
+(senza modificare i file sorgente) nei punti in cui le variabili vengono lette o scritte. Ogni volta che il
+test fallente attraversa una di quelle istruzioni, il valore osservato viene registrato. L'esito è l'aggiunta,
+in coda a \texttt{logic-fl.pl}, di fatti dinamici della forma \texttt{val(Entità, Valore, Posizione)}: ciascuno
+attesta il valore concreto che un'entità ha assunto in un preciso punto dell'esecuzione. Per Csv-4 il fatto
+chiave è:
 
 \begin{lstlisting}[language=Prolog]
-val(v_r_207, null, line(dataset_utilities_tests_1, 1276)).
+val(f_header_map_69, null, line(csvparser_1, 288)).
 \end{lstlisting}
 
-Questo predicato, generato esclusivamente a tempo di esecuzione durante l'istanza del test fallente, attesta inequivocabilmente che
-la locazione di memoria riferita a \texttt{v\_r\_207} possedeva il valore di puntatore \texttt{null} nel momento
-in cui lo stack frame attraversava la riga 1276. L'intensione semantica di \texttt{val/3} è pertanto
- \textit{dinamica}: non si è in presenza di una proprietà astratta derivante dalla topologia statica del
-codice, ma di una misurazione empirica ed esatta dello stato del programma.
+Generato a tempo di esecuzione durante il test fallente, questo predicato attesta che il campo \texttt{f\_header\_map\_69}
+valeva \texttt{null} quando lo stack frame attraversava la riga 288. A differenza dei fatti strutturali,
+\texttt{val/3} è una misurazione empirica dello stato del programma. È proprio la combinazione di fatti
+strutturali (\texttt{assign/3}, \texttt{ref/3}, \texttt{method\_invoc/3}) e fatti dinamici (\texttt{val/3}) a fondare
+la base del ragionatore Prolog: i primi delineano le relazioni possibili tra le entità, i secondi ancorano la
+deduzione agli eventi realmente osservati nella riproduzione del fallimento.
 
-È la combinazione ortogonale di fatti strutturali (quali \texttt{assign/3}, \texttt{ref/3} e \texttt{method\_invoc/3}) con i fatti di
-osservazione dinamica (\texttt{val/3}) a fondare la solida base epistemica del ragionatore Prolog. Il primo set
-fattuale delinea lo spazio cartesiano di tutte le potenziali relazioni raggiungibili tra le entità software;
-il secondo àncora il processo logico-deduttivo agli eventi empiricamente manifestatisi durante la riproduzione del fallimento.
-
-Oltre alla modellazione dello stato della memoria locale tramite i fatti \texttt{val/3}, il modulo \texttt{DynamicAnalyzer} si
-occupa di formalizzare anche le informazioni strutturali relative al frame dello stack trace catturato al
-momento del crash, emettendo predicati dediti all'ispezione della gerarchia delle chiamate.
+Il \texttt{DynamicAnalyzer} formalizza anche lo stack trace catturato al momento del crash:
 
 \begin{lstlisting}[language=Prolog]
-test_failure(test_1, failure_1, exception_npe).
-trace(frame_1, dataset_utilities_tests_1, m_iterate_domain_bounds_89, line(dataset_utilities_tests_1, 1276), failure_1, target).
+test_failure(failure_1, 'org.apache.commons.csv.CSVParserTest', 'testNoHeaderMap').
+trace(trace_3, trace_2, m_get_header_map_61, line(csvparser_1, 288), failure_1, target).
 \end{lstlisting}
 
-Il predicato \texttt{test\_failure/3} definisce e identifica in modo univoco l'evento di fallimento di uno specifico test case,
- esplicitandone la classe (argomento 2) e il metodo (argomento 3). Questo fatto funge da ancoraggio radice: tutti gli eventi dinamici 
- e strutturali registrati per quello specifico crash faranno riferimento al suo identificatore (es. \texttt{failure\_1}), permettendo 
- al sistema di correlare i dati di esecuzione alla loro origine.
-
-Il predicato Prolog \texttt{trace/6} cattura il singolo frame dello stack generato dall'eccezione. La sua arità complessa
-codifica, nello specifico, l'ID dell'invocazione, la classe e il metodo chiamati (argomento 3), la riga
-sorgente di esecuzione (argomento 4) nel ristretto contesto di fallimento osservato (argomento 5), e introduce
-un tag di classificazione binaria che marca il frame come \texttt{target} (qualora esso afferisca al
-codice sorgente dell'applicativo sottoposto a debug) o \texttt{non\_target} (qualora esso origini da framework di testing
-quali JUnit, o da librerie standard della JRE). Questa specifica categorizzazione algoritmica è determinante per
-il corretto innesco del meccanismo che identifica la linea candidata come vera origine dell'anomalia.
+Il predicato \texttt{test\_failure/3} identifica univocamente l'evento di fallimento, esplicitandone classe e
+metodo, e funge da ancoraggio radice cui fanno riferimento tutti gli eventi registrati per quel crash. Il
+predicato \texttt{trace/6} cattura il singolo frame dello stack, codificando l'ID dell'invocazione, la classe e il
+metodo chiamati, la riga sorgente, il contesto di fallimento e un tag binario che marca il frame come
+\texttt{target} (codice dell'applicativo) o \texttt{non\_target} (framework di testing come JUnit, o librerie JRE).
+Questa categorizzazione è determinante per identificare la linea candidata come vera origine dell'anomalia.
 
 
-\subsubsection{Il Flusso Informativo Complessivo}
+\subsection{Costruzione e Ranking delle Catene Causali}
 
-La configurazione integrata dei componenti esaminati può essere visualizzata mediante una rappresentazione topologica del flusso
-delle informazioni. Il diagramma sottostante parten dall'input grezzo (il codice
-Java originario affetto da difetto e la batteria di test JUnit) sino alla materializzazione degli
-output strutturati che verranno serializzati e consumati dal layer in linguaggio Python.
+Il nucleo inferenziale di LogicFL (il file \texttt{npe-rules.pl}) risponde a una domanda precisa: quale entità
+del programma è nulla in un dato punto, e da dove proviene tale nullità?. 
+Il procedimento si articola in quattro passi: \textbf{(1)} localizzare il sito del crash,
+\textbf{(2)} individuare l'espressione nulla, \textbf{(3)} risalire la catena causale fino all'origine,
+\textbf{(4)} ordinare le cause per priorità diagnostica. Il punto d'ingresso è il predicato
+\texttt{find\_npe\_cause}, che orchestra i quattro passi e restituisce le cause già ordinate.
+
+\subsubsection{Dal crash all'origine: la risalita causale}
+
+I primi tre passi ricostruiscono il cammino del valore \texttt{null}, dal sito del crash fino alla sua origine.
+La Figura~\ref{fig:catena_causale} ne mostra il risultato su Csv-4: una catena di quattro anelli, dall'origine
+(riga~325) al crash (riga~288).
 
 \begin{figure}[H]
     \centering
     \begin{tikzpicture}[
-        box/.style={rectangle, draw, thick, rounded corners, minimum height=1cm, text width=4.5cm, align=center, fill=blue!5},
-        arrow/.style={-stealth, thick}
+        codeline/.style={rectangle, draw, thick, rounded corners=2pt, minimum height=0.95cm,
+                         text width=7.4cm, align=left, font=\ttfamily\small},
+        flow/.style={-stealth, thick, blue!60!black},
+        rulelbl/.style={font=\footnotesize\itshape, text=blue!55!black},
+        back/.style={-stealth, very thick, orange!80!black}
     ]
-        % Nodi
-        \node (source) [box] at (0, 0) {Codice Sorgente Java};
-        \node (tests) [box] at (6, 0) {Test JUnit Fallenti};
-        
-        \node (static) [box] at (0, -2.5) {StaticAnalyzer};
-        \node (dynamic) [box] at (6, -2.5) {DynamicAnalyzer};
-        
-        \node (pl) [box] at (3, -5) {\texttt{logic-fl.pl} \\ \texttt{code-facts.pl}};
-        
-        \node (fl) [box] at (3, -7.5) {FaultLocalizer \\ (Motore SWI-Prolog)};
-        
-        \node (output) [box] at (3, -10) {\texttt{root-cause.txt} \\ \texttt{fault\_locs.txt}};
-        
-        \node (parser) [box] at (3, -12.5) {\texttt{logicfl\_parser.py} \\ (Tree-sitter)};
-        
-        % Frecce di collegamento
-        \draw [arrow] (source) -- (static);
-        \draw [arrow] (tests) -- (dynamic);
-        
-        \draw [arrow] (static) |- (pl);
-        \draw [arrow] (dynamic) |- (pl);
-        
-        \draw [arrow] (pl) -- (fl);
-        \draw [arrow] (fl) -- (output);
-        \draw [arrow] (output) -- (parser);
+        \node (n325) [codeline, fill=red!12]    at (0,  0)    {Riga 325:\ \ hdrMap = null};
+        \node (n351) [codeline, fill=blue!8]    at (0, -2)    {Riga 351:\ \ return hdrMap};
+        \node (n244) [codeline, fill=blue!8]    at (0, -4)    {Riga 244:\ \ this.headerMap = initializeHeader()};
+        \node (n288) [codeline, fill=orange!22] at (0, -6)    {Riga 288:\ \ new LinkedHashMap<>(headerMap)};
+
+        \draw [flow] (n325) -- node[right, rulelbl] {return: il null esce dal metodo}   (n351);
+        \draw [flow] (n351) -- node[right, rulelbl] {assign: il campo riceve il null}   (n244);
+        \draw [flow] (n244) -- node[right, rulelbl] {dereference: il campo viene usato} (n288);
+
+        \draw [back] (n288.west) to[out=180, in=180, looseness=1.6]
+              node[midway, left, align=center, font=\footnotesize]
+              {LogicFL\\ risale\\ all'indietro\\ (\texttt{cause\_of})} (n325.west);
+
+        \node[font=\small\bfseries, text=red!70!black]    at (5.0,  0) {ORIGINE};
+        \node[font=\small\bfseries, text=orange!75!black] at (5.0, -6) {CRASH};
     \end{tikzpicture}
-    \caption{Rappresentazione topologica del flusso delle informazioni.}
-    \label{fig:flusso_informativo}
+    \caption{La catena causale di Csv-4. Il valore \texttt{null} nasce a riga~325 e si propaga in avanti
+              fino al crash a riga~288; LogicFL lo scopre percorrendo la catena \emph{all'indietro},
+               dal crash all'origine. Ogni arco corrisponde a una regola di trasferimento.}
+    \label{fig:catena_causale}
 \end{figure}
 
-Da un punto di vista procedurale, il flusso informativo procede attraversando quattro trasformazioni deterministiche:
+\textbf{(1) Sito del crash} e \textbf{(2) espressione nulla}. La riga del crash è il primo frame dello stack
+trace che appartiene al codice applicativo non a librerie o al framework di test; se il frame più interno è
+di libreria, il sistema risale al chiamante (essenziale per le eccezioni lanciate dentro metodi di libreria).
+Individuata la riga, LogicFL cerca l'espressione effettivamente nulla. In Csv-4 si tratta di una
+\emph{dereferenziazione}: il campo \texttt{headerMap}, attestato come \texttt{null} dai fatti dinamici, viene
+usato a riga~288 (questo lo classificherà più avanti come \texttt{UNINITIALIZED\_FIELD}). LogicFL gestisce anche
+un secondo caso, non presente in Csv-4, in cui il \texttt{null} non viene dereferenziato direttamente ma
+\emph{passato come argomento} a un metodo.
 
-\begin{enumerate}
-    \item Il \textbf{codice sorgente Java} viene sottoposto a parsing e analizzato staticamente mediante il modulo
-    \texttt{StaticAnalyzer}. Quest'ultimo converte la sintassi Java in una rappresentazione Prolog dell'Abstract Syntax Tree (AST),
-    mappata interamente tramite un costrutto di predicati di primo ordine.
-    \item I \textbf{test JUnit fallenti} vengono eseguiti contro il binario del programma appositamente strumentato dal
-    \texttt{DynamicAnalyzer}. Questo passaggio inietta direttamente all'interno della \textit{knowledge base} i fatti dinamici \texttt{val/3}, quantificando le occorrenze esatte
-    dei valori \texttt{null} osservati in fase di esecuzione, e popolando i fatti spaziali \texttt{trace/6} e logici
-    \texttt{test\_failure/3} inerenti allo stack trace dell'eccezione.
-    \item Il modulo \textbf{FaultLocalizer} procede al caricamento dell'intera \textit{knowledge base} generata nello spazio di esecuzione
-    di SWI-Prolog appoggiandosi al bridge nativo JPL. Conseguentemente, avvia l'esecuzione delle query logiche di localizzazione
-    avvalendosi del corpus di regole presenti in \texttt{npe-rules.pl}. Le derivazioni logiche (risposte) calcolate dal motore Prolog vengono
-    catturate in strutture dati Java e serializzate su filesystem all'interno dei due file di testo \texttt{root-cause.txt} e \texttt{fault\_locs.txt}.
-    \item Nel layer di elaborazione superiore, il modulo scritto in Python denominato \textbf{\texttt{logicfl\_parser.py}} esegue la lettura sintattica
-    dei file appena prodotti dal motore logico, procedendo alla costruzione e all'istanziazione di un oggetto polimorfico di tipo \texttt{FaultReport}. 
-    Poiché i risultati di LogicFL sono originariamente espressi tramite identificatori Prolog interni (es. \texttt{v\_r\_207}) che risultano intrinsecamente
-     ``opachi'' per un modello generativo, l'istanza generata necessita di un ulteriore passaggio per colmare il divario semantico. A tal fine, per 
-     intercessione del modulo subordinato \textbf{\texttt{prolog\_grounding.py}}, il \texttt{FaultReport} viene arricchito con un livello di informazione 
-     tipologica avanzata. Utilizzando la libreria di parsing incrementale Tree-sitter, il modulo interroga dinamicamente l'AST del codice Java in analisi 
-     per mappare ogni simbolo Prolog alla sua esatta controparte. Nel concreto, questo processo di traduzione permette di convertire l'identificatore 
-     astratto \texttt{v\_r\_207} in un'entità reale e tipizzata, determinando, ad esempio, che esso fa riferimento all'oggetto \texttt{user} di tipo 
-     \texttt{User} alla riga 1276. Tale arricchimento trasforma la diagnosi logica in un contesto pratico immediatamente utilizzabile, 
-     requisito indispensabile affinché l'LLM possa comprendere la natura del difetto e generare una patch corretta e sensata.
-
-\end{enumerate}
-
-\subsection{Costruzione e Ranking delle Catene Causali}
-
-Il file \texttt{npe-rules.pl} costituisce il nucleo inferenziale di LogicFL.
-Esso definisce un insieme di regole Prolog che operano sulla base
-di conoscenza per rispondere a una domanda specifica: quale entità del
-programma è nulla in un dato punto, e da dove proviene
-tale nullità?. Il risultato finale è una catena causale,
-ovvero una sequenza ordinata di fatti che tracciano la propagazione di
-un valore null dalla sua origine fino al sito del crash.
-L'inferenza è strutturata in quattro strati logici distinti: identificazione del sito
-di crash, identificazione dell'espressione nulla, risalita causale, e ranking delle cause.
-
-\subsubsection{Il Predicato Principale: find\_npe\_cause/4}
-
-Il punto di ingresso dell'intera analisi diagnostica è il predicato \texttt{find\_npe\_cause/4}.
-La struttura completa del codice, derivata dall'analisi riga per riga, è:
-\enlargethispage{2\baselineskip}
-\begin{lstlisting}[language=Prolog, breaklines=false]
-find_npe_cause(Expr, Line, Cause, Loc) :-
-    findall(
-        (Cause, Loc),
-        (npe(Expr, Line), cause_of(npe(Expr, Line), Cause, Loc)),
-        List),
-    remove_duplicates(List, UniqueList),
-    rank_causes(UniqueList, RankedList),
-    member((Cause, Loc), RankedList).
-\end{lstlisting}
-
-L'uso di \texttt{findall/3} raccoglie tutte le possibili cause di un errore NPE in una lista.
-Questa rappresenta una strategia di valutazione immediata, necessaria perché il sistema
-computa l'insieme completo di tutte le catene causali plausibili prima di
-procedere al ranking. Il predicato \texttt{remove\_duplicates/2} filtra poi le tuple
-ripetute, che possono emergere quando più regole convergono sulla medesima origine.
-Infine, \texttt{rank\_causes/2} riordina la lista secondo i criteri di preferenza diagnostica,
-e \texttt{member/2} restituisce le soluzioni singolarmente tramite backtracking nel corretto ordine.
-
-\subsubsection{Identificazione del Sito di Crash}
-
-Il predicato \texttt{npe/2} identifica esattamente la coppia espressione e riga dove
-avviene la NullPointerException. La riga candidata viene determinata esclusivamente tramite
-le informazioni di stack trace con i predicati \texttt{candidate\_line/1} e \texttt{first\_target\_trace}.
-Il filtraggio utilizza \texttt{target\_trace/4} per distinguere i frame appartenenti al codice
-applicativo rispetto a quelli non-target, appartenenti a librerie esterne o framework.
-Se il frame più interno risulta essere non-target, il sistema risale
-al frame chiamante per trovare la riga nel codice applicativo originario.
-Questo filtraggio è fondamentale per gestire eccezioni lanciate dentro metodi di libreria.
-
-Una volta identificata la riga, il predicato \texttt{find\_null\_expr/2} individua l'espressione nulla.
-I predicati completi che descrivono le due modalità principali sono:
+\textbf{(3) Risalita causale.} È il cuore deduttivo di LogicFL,
+Il predicato \texttt{cause\_of} prova in ordine tre ipotesi sempre più generali su \emph{dove} sia la causa:
 
 \begin{lstlisting}[language=Prolog]
-find_null_expr(Expr, Line) :- null_ref(Expr, Line).
-find_null_expr(Expr, Line) :- null_arg_passed(Expr, Line).
+% Caso 1 - causa immediata al sito del crash
+cause_of(npe(Expr, Line), Expr, Line) :- check_val(Expr, null, Line).
 
-% Modalita 1: Dereferenziazione di entita null
-null_ref(Expr, Line) :-
-    ref(Expr, _, Line),
-    check_val(Expr, null, Line).
+% Caso 2 - origine diretta (il null nasce qui)
+cause_of(npe(Expr, Line), Cause, Loc) :- originated_from(Expr, Cause, Loc).
+
+% Caso 3 - propagazione transitiva (segui la traccia all'indietro)
+cause_of(npe(Expr, Line), Cause, Loc) :- can_be_transferred(Expr, Cause, Loc).
 \end{lstlisting}
 
-Il fatto \texttt{ref(Expr, \_, Line)} (prodotto dall'analisi statica) attesta che \texttt{Expr} viene
-usata in un'espressione alla riga \texttt{Line}; \texttt{check\_val(Expr, null, Line)} (che si basa
-sui fatti dinamici \texttt{val/3}) verifica che tale entità abbia effettivamente valore \texttt{null}
-durante l'esecuzione del test. La congiunzione di fatto statico e verifica dinamica
-costituisce la prova che questa è una dereference di null reale, non potenziale.\\
+Il primo caso copre il difetto puramente locale (l'entità è già nulla alla riga del crash); il secondo individua
+il punto in cui il \texttt{null} nasce per la prima volta --- in Csv-4 la riga~325; il terzo, quello
+interessante, segue la propagazione all'indietro di un passo, riconoscendo i tre modi in cui un \texttt{null}
+può trasferirsi tra espressioni: per \emph{assegnazione}, per passaggio \emph{parametro\,$\leftarrow$\,argomento}
+tra chiamante e chiamato, o tramite \emph{valore di ritorno}. Sono esattamente gli archi della
+Figura~\ref{fig:catena_causale}: in Csv-4 il valore di ritorno collega il \texttt{return hdrMap} di riga~351 al
+suo chiamante, e l'assegnazione collega il campo a riga~244. Una ricerca in profondità, che tiene traccia dei
+nodi già visitati per non entrare in cicli, compone questi singoli passi in catene di lunghezza arbitraria.
 
-\begin{lstlisting}[language=Prolog]
-% Modalita 2: Argomento null passato a un metodo
-null_arg_passed(Expr, Line) :-
-    trace_called_method(_, M, Line),
-    find_null_arg(Expr, Line, _, M).
+\subsubsection{Ranking e output}
 
-find_null_arg(Expr, Line, MI, M) :-
-    findall((Expr, Line, MI, M), null_arg(Expr, Line, MI, M), NullArgs),
-    remove_duplicates(NullArgs, Unique),
-    member((Expr, Line, MI, M), Unique).
+L'ultimo passo ordina le cause per rilevanza diagnostica in tre fasi. Il \textbf{Filtering}
+scarta le cause formalmente corrette ma inutilizzabili per costruire una patch: le origini interne al codice di
+test e i metodi puramente \emph{delegati} (getter o wrapper che si limitano a restituire un parametro ricevuto),
+i quali segnalano che l'anomalia risiede più a monte nella catena di invocazioni. La \textbf{Preference} eleva
+in cima le cause più azionabili, cioè quelle che soddisfano almeno uno di tre pattern: un metodo con percorsi di
+ritorno sia \texttt{null} sia validi (\emph{missing null-return guard}); un'assegnazione di \texttt{null}
+avvenuta localmente \emph{prima} della riga del crash; oppure un metodo che è l'unico del codice applicativo
+presente nello stack trace. Infine la \textbf{Composizione} antepone le cause preferite alle rimanenti.
 
-null_arg(Expr, Line, MI, M) :-
-    val(Expr, null, Line),
-    argument(Expr, _, MI),
-    method_invoc(MI, M, Line).
-\end{lstlisting}
-
-Questo pattern identifica il caso in cui un'espressione con valore \texttt{null} (attestato dinamicamente da \texttt{val/3}) viene fornita come argomento (\texttt{argument/3}) a un'invocazione di metodo (\texttt{method\_invoc/3}). 
-L'estrazione base dei fatti avviene tramite il predicato \texttt{null\_arg/4}. Per gestire in modo robusto i dati, \texttt{find\_null\_arg/4} raccoglie tutte le possibili combinazioni tramite \texttt{findall/3} provvedendo a eliminare eventuali duplicati.
-Infine, \texttt{null\_arg\_passed/2} lega questi dati al contesto dell'errore: si assicura che il metodo invocato (\texttt{M}) sia effettivamente presente lungo il percorso di stack trace del fallimento, determinandolo tramite \texttt{trace\_called\_method/3}.
-
-
-\subsubsection{Risalita e Propagazione}
-
-Per ricostruire il percorso logico che ha portato un'espressione ad assumere il valore \texttt{null} al momento del crash, 
-il sistema impiega il predicato \texttt{cause\_of/3}. Questo predicato rappresenta il fulcro della localizzazione del guasto 
-e modella una strategia di risalita causale strutturata in tre livelli gerarchici di profondità crescente.
-
-Il codice sottostante illustra questa logica di ricerca, che delega l'individuazione dell'origine primaria al 
-predicato ausiliario \texttt{originated\_from/3} e la tracciabilità dei flussi complessi a \texttt{can\_be\_transferred/3}:
-
-\begin{lstlisting}[language=Prolog]
-% Livello 0: Causa immediata al sito del crash
-cause_of(npe(Expr, Line), Expr, Line) :-
-    check_val(Expr, null, Line).
-
-% Livello 1: Origine diretta e introduzione del valore
-cause_of(npe(Expr, Line), Cause, Loc) :-
-    originated_from(Expr, Cause, Loc).
-
-originated_from(Expr, Expr, Line) :-
-    not_from_others(Expr, null, Line),
-    val_first_introduced(Expr, null, Line).
-
-% Livello N: Propagazione transitiva nel grafo (multi-step)
-cause_of(npe(Expr, Line), Cause, Loc) :-
-    can_be_transferred(Expr, Cause, Loc).
-\end{lstlisting}
-
-La struttura delle clausole di \texttt{cause\_of/3} definisce l'ampiezza dell'analisi 
-necessaria per individuare l'origine della NPE, procedendo dal caso più semplice al più complesso:
-
-\begin{itemize}
-    \item \textbf{Livello 0 (Causa immediata):} Definisce il caso base, verificando se 
-    l'entità risulta essere \texttt{null} esattamente alla riga in cui si verifica l'eccezione, 
-    senza ulteriori tracce di propagazione. Questo scenario corrisponde a difetti strettamente locali, 
-    in cui la variabile è \texttt{null} nello stesso blocco in cui viene dereferenziata.
-    
-    \item \textbf{Livello 1 (Origine diretta):} Se il valore non è intrinsecamente generato al sito del crash, 
-    il sistema invoca \texttt{originated\_from/3}. L'obiettivo di questo predicato è identificare 
-    la riga di codice esatta in cui il valore \texttt{null} è stato iniettato per la prima volta nel 
-    flusso di esecuzione (ad esempio, un'assegnazione esplicita \texttt{var = null} o un \texttt{return null}). 
-    Affinché un'espressione sia classificata come "origine primaria", devono sussistere due condizioni concomitanti: 
-    non deve aver ereditato il valore da espressioni precedenti (\texttt{not\_from\_others/3}) e deve coincidere 
-    con la prima occorrenza di tale valore nell'analisi (\texttt{val\_first\_introduced/3}).
-    
-    \item \textbf{Livello N (Propagazione transitiva):} Quando l'origine non è immediatamente deducibile, 
-    entra in gioco la terza clausola. Tramite il predicato \texttt{can\_be\_transferred/3}, il sistema è 
-    in grado di seguire percorsi di propagazione arbitrariamente lunghi all'interno del grafo delle dipendenze 
-    (come catene di chiamate inter-procedurali, passaggi di parametri e ritorni multipli), navigando a ritroso 
-    fino a individuare l'effettiva causa radice dell'anomalia.
-\end{itemize}
-
-
-Il predicato \texttt{can\_be\_transferred/3} costituisce il cuore computazionale della ricerca nel grafo.
-Esso codifica tre meccanismi fondamentali noti come "single-step transfers" di propagazione:
-
-\begin{lstlisting}[language=Prolog, breaklines=false]
-% Regola 1: Assegnazione diretta
-can_be_transferred(A, B, L) :- assign(A, B, L).
-
-% Regola 2: Parametro-Argomento inter-procedurale
-can_be_transferred(P, A, L1) :-
-    param(P, N, M), method_invoc(MI, M, L1), argument(A, N, MI).
-
-% Regola 3: Valore di ritorno
-can_be_transferred(E, R, L1) :-
-    method_invoc(E, M, L), return(R, M, L1).
-\end{lstlisting}
-
-La prima regola gestisce l'assegnazione, modellando il trasferimento tramite \texttt{assign/3}.
-La seconda regola modella il passaggio parametro-argomento inter-procedurale per catene di chiamate.
-La terza regola gestisce il valore di ritorno dal callee al caller.
-Per estendere questa logica, il predicato \texttt{multi\_step\_transfer/3} implementa una Depth-First Search:
-
-\begin{lstlisting}[language=Prolog]
-multi_step_transfer(Start, End, Considered) :-
-    can_be_transferred(Start, Next, _),
-    \+ member(Next, Considered),
-    multi_step_transfer(Next, End, [Next|Considered]).
-\end{lstlisting}
-
-Questa ricerca mantiene un accumulatore dei passi visitati per prevenire cicli.
-
-\subsubsection{Meccanismo di Ranking e Output}
-
-Il predicato \texttt{rank\_causes/2} implementa un sofisticato sistema di prioritizzazione volto a 
-ordinare le cause individuate in base alla loro rilevanza diagnostica e all'effettiva "azionabilità" 
-in fase di riparazione. L'algoritmo opera su tre fasi logiche distinte: filtraggio (\textit{Filtering}), 
-elevazione (\textit{Preference}) e composizione finale.
-
-\begin{lstlisting}[language=Prolog]
-rank_causes(Total, Ranked) :-
-    % Passo 1 (Filtering): rimuove cause irrilevanti (es. test, arg_passing)
-    exclude(filter_cond, Total, Filtered),
-    
-    % Passo 2 (Preference): isola le cause più azionabili
-    include(prefer_cond, Filtered, Preferred),
-    
-    % Passo 3 (Composizione): antepone le preferite alle cause valide rimanenti
-    subtract(Filtered, Preferred, Remaining),
-    append(Preferred, Remaining, Ranked).
-
-% Condizione di filtro
-filter_cond((_, _, _, Loc)) :- 
-    find_method(Method, Loc), arg_passing_method(Method), !.
-
-% Condizione di preferenza
-prefer_cond((_, _, Cause, Loc)) :-
-    find_method(Method, Loc),
-    (is_null_return(Method, Cause) ;
-     val_assigned_in_method(Cause, Loc, Method) ;
-     only_target_method(Method)), !.
-\end{lstlisting}
-
-
-Nella fase di \textbf{Filtering}, il sistema scarta le cause formalmente corrette ma inutilizzabili 
-per la sintesi della patch. Vengono eliminate le origini all'interno del codice di test e i metodi 
-identificati tramite \texttt{arg\_passing\_method/1}. Quest'ultimi sono tipicamente metodi 
-delegati o getter che si limitano a restituire direttamente un parametro ricevuto al chiamante, 
-indicando che la vera anomalia risiede più a monte nella catena di invocazioni.
-
-La fase di \textbf{Preference} isola ed eleva in cima alla lista le cause statisticamente più 
-significative, promuovendo quelle che soddisfano almeno uno di questi tre pattern diagnostici:
-\begin{itemize}
-    \item \textbf{\texttt{is\_null\_return/2}}: Identifica il pattern di \textit{"missing null-return guard"}, 
-    ovvero un metodo con almeno due punti di ritorno (uno che restituisce \texttt{null} e uno valido). 
-    Questa asimmetria è un forte indicatore di un caso limite non gestito correttamente.
-    \item \textbf{\texttt{val\_assigned\_in\_method/3}}: Privilegia assegnazioni di \texttt{null} 
-    avvenute localmente all'interno dello stesso metodo, imponendo però un rigido vincolo di ordinamento 
-    temporale (l'assegnazione deve precedere l'istruzione in cui avviene il crash).
-    \item \textbf{\texttt{only\_target\_method/1}}: Eleva le cause quando il metodo coinvolto è 
-    l'unico appartenente al codice applicativo ("target") all'interno dello stack trace, rendendole 
-    statisticamente le più azionabili.
-\end{itemize}
-
-Nella fase di \textbf{Composizione}, le cause preferite vengono semplicemente anteposte a tutte le altre 
-rimaste valide dopo il filtro, producendo la lista ordinata finale.
-
-L'output strutturato del \textit{FaultLocalizer} viene infine serializzato. I blocchi trascritti nel file 
-\texttt{root-cause.txt} presentano una distinzione semantica essenziale: il campo \texttt{prolog\_id} 
-riporta l'identificatore opaco usato internamente dal motore logico, mentre il \texttt{java\_name} 
-espone il referente concreto e testuale nel codice sorgente. Questo ordine causale viene poi 
-parsato dallo script \texttt{logicfl\_parser.py} e preservato nel campo \texttt{causal\_chains} del 
-\texttt{FaultReport}, garantendo che il modulo LLM a valle esplori le origini partendo da quelle con 
-la più alta probabilità di successo.
-
-Il primo file, \texttt{root-cause.txt}, adotta un formato semi-strutturato che espone nel dettaglio 
-le catene causali individuate. La struttura tipica di ogni blocco diagnostico segue questo pattern:
-\enlargethispage{3\baselineskip}
+L'output è serializzato in due file. Il primo, \texttt{root-cause.txt}, elenca le cause individuate \emph{in
+ordine di ranking} (non come cammino lineare): la prima voce coincide con il sito del crash, le successive sono
+le restanti cause in ordine di priorità.
 \begin{lstlisting}
-NPE at line(<class_id>, <line_num>) / Null Expression - <prolog_id>[<java_name>]
-   can be caused by
-<cause_prolog_id>[<cause_java_name>] - line(<cause_class_id>, <cause_line>).
+NPE at line(csvparser_1, 288) / Null Expression - f_header_map_69[headerMap]
+	 can be caused by
+f_header_map_69[headerMap] - line(csvparser_1, 288).
+v_hdr_map_70[hdrMap] - line(csvparser_1, 351).
+csvparser_1_literal5[null] - line(csvparser_1, 325).
+csvparser_1_expr20['this.initializeHeader()'] - line(csvparser_1, 244).
 \end{lstlisting}
 
-In questo tracciato emerge una distinzione fondamentale tra i tipi di identificatori utilizzati: 
-il campo \texttt{<prolog\_id>} rappresenta l'identificatore interno usato dal motore logico 
-(opaco e semanticamente povero dal punto di vista di un programmatore Java), mentre il campo \texttt{<java\_name>} 
-tra parentesi quadre fornisce il referente leggibile. Quest'ultimo è di cruciale importanza, in quanto 
-viene estratto direttamente dall'Abstract Syntax Tree (AST) durante la fase di analisi statica preliminare 
-e preservato come annotazione nei fatti Prolog, permettendo di ricollegare la logica formale agli elementi concreti del sorgente.
+Per Csv-4, la riga~351 (\texttt{return hdrMap}) compare subito dopo il sito del crash proprio perché la
+Preference la eleva, riconoscendo il pattern \emph{missing null-return guard} in \texttt{initializeHeader()}. In
+ogni voce, il campo alfanumerico è l'identificatore interno opaco del motore, mentre il testo tra parentesi
+quadre è il referente Java leggibile estratto dall'AST. Questa sequenza ordinata è preservata nel campo
+\texttt{causal\_chains} del \texttt{FaultReport}, così che l'LLM possa esaminare le cause a partire dalla più
+probabile.
 
-Il secondo file, \texttt{fault\_locs.txt}, fornisce invece una vista molto più compatta e operativa:
+Il secondo file, \texttt{fault\_locs.txt}, fornisce la vista compatta: le sole righe candidate, nello stesso
+ordine di priorità.
 
 \begin{lstlisting}
-org.jfree.data.general.DatasetUtilities 780
-org.jfree.data.general.DatasetUtilities 779
+org.apache.commons.csv.CSVParser 288
+org.apache.commons.csv.CSVParser 351
+org.apache.commons.csv.CSVParser 325
+org.apache.commons.csv.CSVParser 244
 \end{lstlisting}
 
-Ogni riga associa univocamente una classe Java, espressa in notazione \textit{Fully Qualified Name} (FQN), 
-al numero di una riga di codice sospetta. Le righe sono rigorosamente ordinate secondo la priorità stabilita 
-dal sistema di \textit{ranking}. Questo file viene consumato direttamente dal metodo \texttt{\_parse\_fault\_locations/2} 
-all'interno dello script \texttt{logicfl\_parser.py}, il cui compito è parsare la lista per istanziare formalmente gli 
-oggetti \texttt{FaultLocation} che guideranno il successivo processo di esplorazione e riparazione del codice.
+.
 
 \subsection{Semantic Grounding: Dalla Logica Formale all'Identità Java}
+\label{sec:grounding}
 \subsubsection{Il Problema della Vaghezza Simbolica}
-Il motore LogicFL produce le catene causali sfruttando un vocabolario interno
-a Prolog, con identificatori opachi come v\_r\_207 o xyplot\_1\_expr343.
-Questi simboli hanno pieno significato nel sistema di inferenza Prolog, ma
-sono semanticamente privi di significato per un Large Language Model.
-Tale condizione genera un grave problema di "vaghezza simbolica": il modello
-riceve informazioni formalmente corrette, ma sintatticamente e semanticamente molto povere.
-L'LLM deve compiere uno sforzo interpretativo enorme non garantito, aumentando drasticamente
-la probabilità di allucinare o compiere errori di interpretazione diagnostica.
-Per risolvere definitivamente questa ambiguità, il modulo \texttt{prolog\_grounding.py} applica un processo
-fondamentale chiamato "reificazione semantica". Ogni singolo simbolo Prolog viene tradotto
-nella sua controparte Java concreta, estraendone nome, tipo e ruolo strutturale.
-In questo modo si annulla l'opacità simbolica, fornendo al modello linguistico
-un quadro diagnostico preciso, tipo-corretto e immediatamente azionabile per la riparazione.
+Gli identificatori Prolog opachi (come \texttt{f\_header\_map\_69} o \texttt{csvparser\_1\_expr20}) hanno pieno significato
+nel motore di inferenza ma sono privi di significato per un Large Language Model. Questa ``vaghezza simbolica''
+fornisce al modello informazioni formalmente corrette ma semanticamente povere, aumentando il rischio di
+allucinazioni. Per risolverla, il modulo \texttt{prolog\_grounding.py} applica il \textit{grounding
+semantico}: ogni simbolo Prolog viene tradotto nella sua controparte Java concreta (nome, tipo e ruolo
+strutturale), fornendo al modello un quadro diagnostico preciso, tipo-corretto e azionabile.
 
 \subsubsection{La Tassonomia degli Identificatori Prolog}
 Il primo passo del Semantic Grounding consiste nell'ispezionare l'identificatore Prolog per
@@ -600,126 +379,27 @@ def _classify_entity_kind(prolog_id: str) -> str:
 \end{lstlisting}
 
 \subsubsection{La Risoluzione dei Tipi Tramite Tree-sitter AST}
-La libreria Tree-sitter viene impiegata come parser incrementale per interrogare sistematicamente
-l'Abstract Syntax Tree senza dover richiedere una compilazione completa dell'intero progetto.
-La funzione \texttt{\_resolve\_type\_at\_line} smista le richieste delegando la ricerca ai metodi
-specializzati, a seconda dell'esatta categoria tassonomica calcolata in precedenza sull'entità target.
+Per recuperare il tipo Java di ciascuna entità, il sistema usa la libreria Tree-sitter come parser
+incrementale, interrogando direttamente l'AST senza dover compilare l'intero progetto. Una funzione di
+smistamento (\texttt{\_resolve\_type\_at\_line}) instrada la richiesta al risolutore specializzato in base alla
+categoria calcolata in precedenza: variabili locali, parametri, campi o espressioni. I quattro risolutori
+condividono l'idea di fondo ma differiscono nello scope di ricerca; ne vediamo il caso rappresentativo, quello
+delle variabili locali.
 
-\begin{lstlisting}[language=Python]
-def _resolve_type_at_line(entity_name: str, entity_kind: str,
-                          crash_line: int, ast_root: Node) -> str:
-    # Funzione principale di orchestrazione per la risoluzione dei tipi AST
-    if entity_kind == "variable":
-        return _find_variable_type_in_node(entity_name, crash_line, ast_root)
-    elif entity_kind == "parameter":
-        return _find_param_type_in_node(entity_name, crash_line, ast_root)
-    elif entity_kind == "field":
-        return _find_field_type_in_tree(entity_name, ast_root)
-    elif entity_kind == "expression":
-        return _infer_type_from_expression(entity_name, ast_root)
-    return ""
-\end{lstlisting}
-
-Per le \textbf{variabili locali} (\texttt{entity\_kind == "variable"}), la ricerca viene 
-circoscritta al metodo che contiene l'istruzione in cui si è verificato il crash. 
-Il sistema sfrutta la funzione \texttt{\_find\_enclosing\_method\_iterative} per individuare 
-il nodo \texttt{method\_declaration} più interno.
-
-Successivamente, il sistema esegue una Depth-First Search (DFS) iterativa partendo dal sotto-albero 
-del metodo individuato, alla ricerca di un nodo \texttt{local\_variable\_declaration}. Quando ne 
-viene trovato uno, l'algoritmo non assume che il tipo sia semplicemente un campo diretto della 
-dichiarazione. Al contrario, ispeziona sequenzialmente i nodi figli per raccogliere l'informazione 
-sul tipo (che può assumere diverse forme sintattiche, come \texttt{type\_identifier}, \texttt{generic\_type}, 
-\texttt{array\_type}, ecc.) e cerca il corrispondente \texttt{variable\_declarator}. Se l'identificatore 
-del dichiaratore corrisponde al nome della variabile cercata, viene restituito il nome del tipo precedentemente salvato.
-
-\begin{lstlisting}[language=Python]
-def _find_variable_type_in_node(method_node, var_name: str) -> str:
-    """Cerca il tipo di una variabile locale nell'AST del metodo."""
-    stack = [method_node]
-    while stack:
-        node = stack.pop()
-        if node.type == "local_variable_declaration":
-            type_node = None
-            for child in node.children:
-                # Raccoglie il nodo tipo
-                if child.type in (
-                    "type_identifier", "generic_type", "array_type",
-                    "integral_type", "floating_point_type", "boolean_type",
-                    "scoped_type_identifier",
-                ):
-                    type_node = child
-                # Controlla se il declarator corrisponde al nome cercato
-                elif child.type == "variable_declarator":
-                    name_node = child.child_by_field_name("name")
-                    if name_node and name_node.text.decode("utf-8") == var_name:
-                        if type_node:
-                            return type_node.text.decode("utf-8")
-        for child in node.children:
-            stack.append(child)
-    return ""
-\end{lstlisting}
-
-
-Per i \textbf{parametri formali} (\texttt{entity\_kind == "parameter"}), la ricerca viene effettuata esplorando 
-i parametri del metodo contenente la riga in cui si verifica l'errore. La funzione itera sui nodi figli 
-del \texttt{method\_declaration} fino a individuare il nodo \texttt{formal\_parameters}, che racchiude l'intera firma.
-
-Una volta trovata la lista dei parametri, il sistema ispeziona iterativamente ogni nodo \texttt{formal\_parameter}. 
-A differenza delle variabili locali, nei parametri formali l'AST di Tree-sitter struttura in modo più regolare 
-l'informazione, rendendo il nome e il tipo direttamente accessibili tramite i campi denominati \texttt{name} e 
-\texttt{type}. Il sistema estrae dunque direttamente i due nodi tramite \texttt{child\_by\_field\_name}; se i
-l testo del nodo nome corrisponde al parametro ricercato, ne viene immediatamente restituito il tipo.
-
-\begin{lstlisting}[language=Python]
-def _find_param_type_in_node(method_node, param_name: str) -> str:
-    """Cerca il tipo di un parametro formale nell'AST del metodo."""
-    for child in method_node.children:
-        if child.type == "formal_parameters":
-            for param in child.children:
-                if param.type == "formal_parameter":
-                    name_node = param.child_by_field_name("name")
-                    type_node = param.child_by_field_name("type")
-                    if (name_node and type_node
-                            and name_node.text.decode("utf-8") == param_name):
-                        return type_node.text.decode("utf-8")
-    return ""
-\end{lstlisting}
-
-
-Per i \textbf{campi di istanza/classe} (\texttt{entity\_kind == "field"}), la ricerca si estende all'intero albero 
-fornito, poiché le dichiarazioni di campo risiedono a livello della classe e non all'interno del singolo metodo. 
-Il sistema esegue una DFS iterativa a partire dalla radice dell'AST.
-
-La logica di analisi del nodo \texttt{field\_declaration} è strutturalmente identica a quella 
-impiegata per le variabili locali. Poiché l'albero sintattico separa il tipo dal dichiaratore della 
-variabile, l'algoritmo scorre i nodi figli per identificare da un lato il nodo contenente il tipo, 
-e dall'altro il \texttt{variable\_declarator}. Se il nome estratto da quest'ultimo combacia con il campo 
-cercato, viene restituito il tipo precedentemente memorizzato.
-
-\begin{lstlisting}[language=Python]
-def _find_field_type_in_tree(root_node, field_name: str) -> str:
-    """Cerca il tipo di un campo nella dichiarazione di classe."""
-    stack = [root_node]
-    while stack:
-        node = stack.pop()
-        if node.type == "field_declaration":
-            type_node = None
-            for child in node.children:
-                if child.type in (
-                    "type_identifier", "generic_type", "array_type",
-                    # ... altri tipi omessi per brevità ...
-                ):
-                    type_node = child
-                elif child.type == "variable_declarator":
-                    name_node = child.child_by_field_name("name")
-                    if name_node and name_node.text.decode("utf-8") == field_name:
-                        if type_node:
-                            return type_node.text.decode("utf-8")
-        for child in node.children:
-            stack.append(child)
-    return ""
-\end{lstlisting}
+Per le \textbf{entità dichiarate}, variabili locali, parametri formali e campi, la strategia è la stessa:
+raggiungere il nodo di dichiarazione nell'AST e leggerne il tipo. I tre casi differiscono solo nello
+\emph{scope} di ricerca:
+\begin{itemize}
+    \item le \textbf{variabili locali} si cercano nel solo metodo che contiene il crash, con una DFS che individua il nodo; 
+    poiché l'AST separa il tipo dal dichiaratore, si raccoglie il nodo del
+    tipo (nelle sue varie forme: \texttt{type\_identifier}, \texttt{generic\_type}, \texttt{array\_type}\dots) e
+    il \texttt{variable\_declarator} il cui nome coincide con la variabile cercata;
+    \item i \textbf{parametri formali} sono più immediati: l'AST espone nome e tipo come campi (\texttt{name} e
+    \texttt{type}) del nodo \texttt{formal\_parameter}, accessibili con \texttt{child\_by\_field\_name}, senza
+    bisogno della DFS;
+    \item i \textbf{campi di istanza/classe} usano la stessa logica delle variabili locali, ma estesa all'intero
+    albero anziché al singolo metodo, perché le dichiarazioni di campo risiedono a livello di classe.
+\end{itemize}
 
 Per le \textbf{espressioni composte} (\texttt{entity\_kind == "expression"}), la risoluzione esatta del tipo restituito 
 non è possibile tramite una semplice ricerca di dichiarazione, poiché dipende dalla semantica dei metodi invocati. 
@@ -728,7 +408,7 @@ Pertanto, il sistema applica un'euristica mirata tramite pattern matching per ri
 ma anche strutture sintatticamente più ricche, includendo costrutti Java avanzati (come tipi generici o array).
 
 \begin{lstlisting}[language=Python]
-def _infer_type_from_expression(expr: str, lines: List[str], line_no: int) -> str:
+def _infer_type_from_expression(expr: str) -> str:
     """Inferisce il tipo di un'espressione tramite pattern matching."""
     # Pattern: (Tipo)espressione -> il tipo dichiarato nel cast è assunto come tipo
     cast_match = re.match(r"\((\w[\w<>\[\],\s]*)\)", expr)
@@ -737,7 +417,8 @@ def _infer_type_from_expression(expr: str, lines: List[str], line_no: int) -> st
     return ""
 \end{lstlisting}
 
-Ad esempio, data l'espressione \texttt{(XYItemRenderer)this.renderers.get(i)}, il pattern isola ed estrae la stringa \texttt{XYItemRenderer}.
+Ad esempio, in un altro bug del dataset, data l'espressione \texttt{(XYItemRenderer)this.ren\\derers.get(i)}, 
+il pattern isola ed estrae la stringa \texttt{XYItemRenderer}.
 
 \textbf{Meccanismo di fallback testuale:} qualora l'analisi tramite Tree-sitter non fosse disponibile o 
 fallisse la ricerca nell'albero, il sistema possiede un meccanismo di fallback. 
@@ -765,96 +446,29 @@ def _resolve_type_regex(lines, line_no, java_name, entity_kind) -> str:
     return ""
 \end{lstlisting}
 
-È opportuno chiarire perché l'approccio temporale/testuale tramite espressioni regolari sia relegato a un ruolo di \textit{fallback} 
-anziché essere impiegato come meccanismo principale. A differenza dell'analisi strutturale offerta da un parser AST come 
-Tree-sitter, l'utilizzo delle regex presenta dei considerevoli limiti intrinseci:
+L'approccio testuale è relegato a \textit{fallback} perché, a differenza dell'analisi strutturale AST, le regex
+presentano limiti intrinseci:
 \begin{itemize}
-    \item \textbf{Falsi positivi:} la valutazione strettamente testuale rischia di intercettare frammenti 
-    di codice commentati, letterali stringa o specifiche combinazioni di parole chiave che mimano sintatticamente una dichiarazione;
-    \item \textbf{Mancanza di contesto e scoping:} la scansione sequenziale all'indietro è "cieca" rispetto all'annidamento dei 
-    blocchi di formattazione. Non è in grado di tracciare accuratamente la validità (scope) di una variabile all'interno 
-    di costrutti \texttt{if}, cicli o nei numerosi casi di \textit{shadowing}. L'AST, all'opposto, naviga l'albero mantenendo 
-    piena consapevolezza dell'ambito di esecuzione;
-    \item \textbf{Complessità stilistica e formattazione:} il linguaggio Java ammette un'estesa flessibilità formale. 
-    La presenza di ritorni a capo arbitrari prima del nome della variabile, tipi generici profondamente annidati, 
-    array destrutturati e annotazioni rende le espressioni regolari estremamente complesse e fragili.
+    \item \textbf{Falsi positivi:} possono intercettare codice commentato, letterali stringa o parole chiave che
+    mimano sintatticamente una dichiarazione;
+    \item \textbf{Mancanza di scoping:} la scansione all'indietro è ``cieca'' rispetto all'annidamento dei blocchi
+    e ai casi di \textit{shadowing}, mentre l'AST mantiene piena consapevolezza dello scope;
+    \item \textbf{Fragilità sintattica:} ritorni a capo arbitrari, generici annidati, array e annotazioni rendono
+    le espressioni regolari complesse e fragili.
 \end{itemize}
-
-Pertanto, la procedura a ritroso funge esclusivamente da "rete di sicurezza", intervenendo con ottimi 
-risultati per sopperire ai fallimenti puntuali dell'analisi strutturale.
-
-\subsubsection{Il Parsing Strutturale di root\_cause.txt}
-
-Infine, il modulo \texttt{prolog\_grounding.py} implementa un parser rigoroso basato su espressioni regolari dedicato all'elaborazione del formato generato in \texttt{root\_cause.txt}. 
-Le regex chiave, \texttt{\_NPE\_HEADER\_RE} e \texttt{\_CAUSE\_RE}, sono specificamente progettate per disassemblare il blocco testuale ed estrarre con precisione non solo la riga del crash, ma anche l'identificativo interno di Prolog e il nome della variabile Java coinvolta.
-
-\begin{lstlisting}[language=Python]
-import re
-
-# Matcha l'intestazione di ogni blocco NPE:
-# "NPE at line(class_id, line) / Null Expression - prolog_id[java_name]"
-_NPE_HEADER_RE = re.compile(
-    r"NPE at line\((\w+),\s*(\d+)\)\s*/\s*Null Expression\s*-?\s*(\w+)\[([^\]]*)\]"
-)
-
-# Matcha ogni riga di causa per risalire l'albero:
-# "cause_expr[cause_name] - line(cause_class_id, cause_line)."
-_CAUSE_RE = re.compile(
-    r"(\w+)\[([^\]]*)\]\s*-\s*line\((\w+),\s*(\d+)\)\."
-)
-\end{lstlisting}
-
-La funzione di parsing applica questi pattern per popolare la struttura dati \texttt{\_RawNPEEntry}. A differenza di un semplice dizionario o di una classe generica, questa struttura è ottimizzata in memoria tramite \texttt{\_\_slots\_\_} e funge da DTO (Data Transfer Object) per mantenere traccia di ogni singolo "anello" della catena causale. Successivamente, i record estratti vengono aggregati per sito di crash (utilizzando la tripla composta da \texttt{class\_id}, \texttt{crash\_line} e \texttt{null\_prolog\_id}) per raggruppare le cause relative al medesimo errore.
-
-\begin{lstlisting}[language=Python]
-class _RawNPEEntry:
-    """Rappresentazione interna di una singola riga di causa in root_cause.txt."""
-    __slots__ = (
-        "class_id",        # Es. "dataset_utilities_1"
-        "crash_line",      # Es. 780
-        "null_prolog_id",  # Es. "v_r_207"
-        "null_java_name",  # Es. "r"
-        "cause_prolog_id", # Es. "dataset_utilities_1_literal5"
-        "cause_java_name", # Es. "null"
-        "cause_class_id",  # Es. "dataset_utilities_1"
-        "cause_line",      # Es. 780
-    )
-\end{lstlisting}
-
+La procedura a ritroso funge quindi da rete di sicurezza per i fallimenti puntuali dell'analisi strutturale.
 
 \subsubsection{La Classificazione delle NPE}
 
-A partire dall'entità nulla (\texttt{null\_entity}) e 
-dalla lista delle cause contestualizzate, il sistema 
-classifica ogni NullPointerException in una delle 
-sei categorie precise. Questa tassonomia deriva 
-esplicitamente dalle regole formali espresse originariamente nel 
-file \texttt{npe-rules.pl}. Di seguito è 
-riportata la funzione \texttt{\_classify\_npe} che implementa 
-integralmente questa logica di mappatura euristica:
+Prima della classificazione, un parser a espressioni regolari (in \texttt{prolog\_grounding.py}) disassembla il
+formato testuale di \texttt{root\_cause.txt}, già illustrato in precedenza, in record grezzi, uno per ciascun
+anello della catena causale, aggregati per sito di crash. È su questi record che opera la risoluzione dei tipi
+descritta sopra, producendo le entità Java tipizzate.
 
-\begin{lstlisting}[language=Python]
-def _classify_npe(null_entity: 'GroundedEntity', causes: list['GroundedCause']) -> str:
-    # Ispezione iterativa delle regole Prolog che hanno generato le cause
-    prolog_rules = [c.prolog_rule for c in causes]
-    
-    if "is_null_return" in prolog_rules:
-        return "NULL_RETURN"
-    elif "null_arg_passed" in prolog_rules:
-        return "NULL_ARGUMENT"
-    elif null_entity.entity_kind == "field" and "null_ref" in prolog_rules:
-        return "UNINITIALIZED_FIELD"
-    elif "array_access" in prolog_rules: 
-        return "NULL_ARRAY_ACCESS"
-    elif any(c.entity.entity_kind == "literal" for c in causes):
-        return "NULL_LITERAL_ASSIGN"
-    else:
-        return "NULL_DEREFERENCE"
-\end{lstlisting}
-
-La corrispondenza rigorosa tra le categorie Python 
-e le regole Prolog sottostanti è riassunta 
-nella seguente tabella di mappatura semantica :
+A partire dall'entità nulla e dalla lista delle cause, il sistema classifica poi ogni NPE in una di sei
+categorie, secondo una tassonomia derivata dalle regole di \texttt{npe-rules.pl}: ispeziona le regole Prolog che
+hanno generato le cause e assegna la categoria corrispondente. La mappatura è riassunta nella tabella seguente
+(per Csv-4 la categoria risultante è \texttt{UNINITIALIZED\_FIELD}):
 
 \begin{table}[h]
 \centering
@@ -874,11 +488,9 @@ NULL\_LITERAL\_ASSIGN & \texttt{val} con literal in cause & Assegnazione esplici
 
 \subsubsection{La Struttura Dati GroundedNPE}
 
-Il risultato definitivo del processo di Semantic Grounding è costituito dall'oggetto 
-\texttt{GroundedNPE}, che incapsula e struttura gerarchicamente tutti gli strati 
-informativi accumulati durante l'inferenza. Questa gerarchia di modelli risiede nel modulo 
-\texttt{shared/models.py} e sfrutta le \texttt{dataclass} di Python per definire contratti 
-chiari e tipizzati:
+Il risultato del Semantic Grounding è l'oggetto \texttt{GroundedNPE}, che struttura gerarchicamente gli strati
+informativi dell'inferenza. Questa gerarchia risiede in \texttt{shared/models.py} e usa le \texttt{dataclass} di
+Python per contratti tipizzati:
 
 \begin{lstlisting}[language=Python,breaklines=false]
 from dataclasses import dataclass
@@ -887,11 +499,11 @@ from typing import List
 @dataclass
 class GroundedEntity:
     """Un'entità Prolog risolta nella sua identità Java reale."""
-    prolog_id: str      # Es. "v_r_207" (ID opaco Prolog)
-    java_name: str      # Es. "r" (nome Java leggibile)
-    java_type: str      # Es. "Range" (tipo Java risolto via AST)
-    entity_kind: str    # Es. "variable" (ruolo semantico)
-    source_line: int    # Riga sorgente (1-indexed)
+    prolog_id: str      # Es. "f_header_map_69" (ID opaco Prolog)
+    java_name: str      # Es. "headerMap" (nome Java leggibile)
+    java_type: str      # Es. "Map<String,Integer>" (tipo risolto via AST)
+    entity_kind: str    # Es. "field" (ruolo semantico)
+    source_line: int    # Es. 288 (riga sorgente, 1-indexed)
 \end{lstlisting}
 \begin{lstlisting}[language=Python]
 @dataclass
@@ -911,20 +523,14 @@ class GroundedNPE:
     repair_directive: str         # Direttiva generata per la riparazione
 \end{lstlisting}
 
-A livello architetturale, questa gerarchia confluisce nel campo \texttt{grounded\_chains} 
-(una \texttt{List[GroundedNPE]}) esposto dall'oggetto radice \texttt{FaultReport}. 
-Quest'ultimo rappresenta il prodotto finale e consolidato della Fase 1, specificamente 
-progettato come payload di input per essere consumato dalle successive fasi \textit{downstream} 
-della pipeline, ovvero la generazione dei prompt per l'LLM.
+Questa gerarchia confluisce nel campo \texttt{grounded\_chains} (una \texttt{List[GroundedNPE]}) dell'oggetto
+\texttt{FaultReport}, prodotto finale della Fase 1 e payload di input per la generazione dei prompt LLM.
 
 
 \subsubsection{Direttive di Riparazione (Rule-to-Prompt)}
 
-Sulla base della classificazione dell'NPE precedentemente operata, 
-il sistema genera autonomamente una direttiva operativa 
-di riparazione specifica per la categoria isolata. 
-Il dizionario \texttt{\_REPAIR\_DIRECTIVES} implementa il meccanismo 
-"Rule-to-Prompt", definendo i template parametrici fondamentali:
+Sulla base della classificazione, il sistema genera una direttiva di riparazione specifica per categoria. Il
+dizionario \texttt{\_REPAIR\_DIRECTIVES} implementa il meccanismo ``Rule-to-Prompt'' tramite template parametrici:
 \begin{lstlisting}[language=Python, showstringspaces=false, breaklines=true]
 _REPAIR_DIRECTIVES: Dict[NPECategory, str] = {
     NPECategory.NULL_RETURN: (
@@ -944,6 +550,16 @@ _REPAIR_DIRECTIVES: Dict[NPECategory, str] = {
         "Add initialization in the constructor or a lazy-init null-check before use. "
         "Consider what the correct default value should be."
     ),
+    NPECategory.NULL_ARRAY_ACCESS: (
+        "The element retrieved from `{null_name}` is null. "
+        "Add a null-check on the retrieved element before dereferencing it, "
+        "OR ensure the array/collection never stores null at that position."
+    ),
+    NPECategory.NULL_DEREFERENCE: (
+        "The variable `{null_name}` is null when dereferenced at line {crash_line}. "
+        "Add a null guard before the dereference, "
+        "OR trace back why it is never assigned a non-null value."
+    ),
     NPECategory.NULL_LITERAL_ASSIGN: (
         "The variable `{null_name}` is explicitly assigned `null` at line {assign_line} "
         "and later dereferenced at line {crash_line}. "
@@ -953,134 +569,71 @@ _REPAIR_DIRECTIVES: Dict[NPECategory, str] = {
 }
 \end{lstlisting}
 
-Questo meccanismo "Rule-to-Prompt" è concettualmente cruciale. 
-Le direttive sono infatti largamente parametriche rispetto 
-alle informazioni "grounded": identificatori come \texttt{\{null\_name\}} 
-vengono sostituiti dinamicamente con il nome Java 
-reale dell'entità nulla. L'importanza della parametrizzazione 
-risiede nella sua capacità di trasformare un'analisi 
-statica astratta in un'istruzione imperativa, direttamente 
-comprensibile da un modello generativo senza ulteriore computazione.
+Le direttive sono parametriche rispetto alle informazioni grounded: segnaposto come \texttt{\{null\_name\}}
+vengono sostituiti dinamicamente con il nome Java reale dell'entità nulla. La parametrizzazione trasforma così
+un'analisi statica astratta in un'istruzione imperativa, direttamente comprensibile dal modello generativo.
+La direttiva così istanziata viene salvata nel campo \texttt{repair\_directive} del rispettivo \texttt{GroundedNPE}
+(e quindi in \texttt{FaultReport.grounded\_chains}): non è ancora il prompt completo, ma il frammento operativo
+che la fase di riparazione inserirà nel prompt inviato all'LLM.
 
-\subsubsection{Analisi Epistemologica: Il Vantaggio Deduttivo}
+\subsubsection{Perché Questo Aiuta l'LLM}
 
-L'analisi comparativa tra l'output originale di LogicFL 
-e l'output semanticamente reificato illustra concretamente 
-l'enorme vantaggio introdotto da questa architettura. 
+Il confronto tra l'output grezzo di LogicFL e quello arricchito dal grounding illustra il vantaggio di questa
+architettura.
 
-\textbf{Prima (Grezzo)}
+\textbf{Prima (Grezzo - Output di LogicFL)}
 \begin{lstlisting}[language={}, basicstyle=\ttfamily\small, keywordstyle={}, stringstyle={}, commentstyle={}, showstringspaces=false]
-NPE: [r] v_r_2115 at line 4493
-Cause: [this.renderers.get(index)] xyplot_1_expr315 at line 1747
+NPE at line(csvparser_1, 288) / Null Expression - f_header_map_69[headerMap]
 \end{lstlisting}
 
-\textbf{Dopo (Strutturato e Grounded)}
+\textbf{Dopo (Strutturato - Input per l'LLM)}
 \begin{lstlisting}[language={}, basicstyle=\ttfamily\small, keywordstyle={}, stringstyle={}, commentstyle={}, showstringspaces=false]
-Categoria: NULL_RETURN
-Entita: r (Tipo: XYItemRenderer) alla riga 4493
-Causa originaria: this.renderers.get(index) alla riga 1747
-Direttiva: "Il metodo che popola 'r' puo' restituire null 
-alla riga 1747. Implementa un null-check..."
+Categoria: UNINITIALIZED_FIELD
+Entita: headerMap (Tipo: Map<String, Integer>) alla riga 288
+Direttiva: "The field `headerMap` is not initialized (or explicitly set 
+to null). Add initialization in the constructor or a lazy-init 
+null-check before use. Consider what the correct default value should be."
 \end{lstlisting}
 
-Questa profonda differenza qualitativa è argomentabile attraverso 
-quattro dimensioni epistemiche fondamentali:
+Ricevendo questo input mirato, l'agente LLM di HybridRepair è in grado di produrre, al suo secondo tentativo, una patch che supera la suite di test di Csv-4, introducendo un ternary operator che gestisce esplicitamente il caso non inizializzato:
+\begin{lstlisting}[language=Java]
+// Patch generata da HybridRepair per Csv-4
+public Map<String, Integer> getHeaderMap() {
+    return this.headerMap == null ? null : new LinkedHashMap<>(this.headerMap);
+}
+\end{lstlisting}
 
-\textbf{1. Risoluzione dei tipi:} 
-L'output grounded include esplicitamente il tipo Java 
-\texttt{XYItemRenderer} per la variabile \texttt{r}, informazione originariamente 
-assente nel testo grezzo. Il modello linguistico 
-può quindi ragionare immediatamente su quale tipo 
-di valore di default sia programmaticamente appropriato, 
-senza dover inferire probabilisticamente il tipo dal 
-contesto, operazione per sua natura soggetta a errori.
+La differenza qualitativa si articola su quattro dimensioni:
+\begin{itemize}
+    \item \textbf{Risoluzione dei tipi:} l'output grounded include il tipo Java (\texttt{Map<String, Integer>}),
+    assente nel testo grezzo; il modello può ragionare sul costruttore di classe più appropriato.
+    \item \textbf{Classificazione semantica:} la categoria \texttt{UNINITIALIZED\_FIELD} focalizza l'attenzione 
+    sul ciclo di vita del campo all'interno della classe, suggerendo una soluzione mirata.
+    \item \textbf{Direttiva operativa:} la direttiva traduce l'analisi logica in un'istruzione d'azione concreta,
+    guidando l'LLM ad implementare un null-check piuttosto che modifiche arbitrarie, garantendo una \textit{constrained generation}.
+    \item \textbf{Eliminazione dell'ambiguità simbolica:} gli identificatori opachi (\texttt{f\_header\_map\_69}) sono
+    sostituiti dalle controparti Java, evitando che il modello li confonda con nomi di variabili reali.
+\end{itemize}
 
-\textbf{2. Classificazione semantica:} 
-La categoria esplicita \texttt{NULL\_RETURN} segnala inequivocabilmente 
-che il problema architetturale non risiede nella 
-variabile \texttt{r} in sé, ma direttamente nel 
-metodo che la popola originariamente. Senza 
-classificazione, il modello potrebbe erroneamente concentrare i 
-tentativi di riparazione unicamente sulla riga del crash.
+In sintesi, mentre i modelli puramente statistici operano \textit{a posteriori} sul testo sorgente, HybridRepair
+combina la certezza deduttiva di Prolog con la flessibilità generativa del modello: il Semantic Grounding è il
+ponte tra logica e probabilità.
 
-\textbf{3. Direttiva operativa:} 
-La direttiva traduce il risultato dell'analisi logica 
-in una precisa istruzione di azione concreta. 
-Questo riduce lo spazio di ricerca del modello 
-da una teorica "qualsiasi trasformazione" a una 
-precisa trasformazione mirata. L'effetto generato si 
-traduce in un \textit{prompting} altamente prescrittivo, 
-vincolando la risposta del modello (in gergo, \textit{constrained generation}) 
-al fine di minimizzare drasticamente il rischio di allucinazioni.
+\subsubsection{Robustezza e Degradazione Controllata}
 
-\textbf{4. Eliminazione dell'ambiguità simbolica:} 
-Gli identificatori Prolog storicamente opachi (come \texttt{v\_r\_2115}) 
-sono stati irreversibilmente sostituiti con le loro 
-controparti contestuali Java. Questo 
-elimina strutturalmente la possibilità che il modello 
-interpreti erroneamente gli identificatori come nomi di variabili reali o 
-li confonda con altri elementi del codice.
-
-In definitiva, i modelli neurali puramente statistici 
-operano tipicamente \textit{a posteriori} sul testo sorgente. 
-HybridRepair combina invece l'inconfutabile certezza deduttiva del 
-ragionamento Prolog con l'elevata flessibilità generativa del 
-modello linguistico. Il Semantic Grounding diviene 
-il ponte traduttivo indispensabile tra logica e probabilità.
-
-\subsubsection{Robustezza e Degradezza Controllata}
-
-Il modulo \texttt{prolog\_grounding.py} è architettato seguendo una 
-filosofia ingegneristica di \textit{graceful degradation}. Ogni 
-singola fase del processo computazionale può teoricamente 
-fallire indipendentemente senza mai compromettere il funzionamento 
-globale dell'intero sistema. Se l'AST parser 
-Tree-sitter risulta irreperibile, il sistema ricade fluidamente 
-sull'approccio esplorativo basato su regex. Se il 
-tipo rimane irrisolvibile, il campo corrispondente omette 
-silenziosamente l'informazione, procedendo alla riparazione con una 
-direttiva parzialmente istanziata ma ancora valida. 
-Infine, se le strutture \texttt{root\_cause.txt} non sono reperibili, 
-il sistema sfrutta le catene causali grezze come 
-fallback assoluto. Questa robustezza sistematica garantisce un 
-miglioramento continuo senza introdurre fatali \textit{single points of failure}.
+Il modulo \texttt{prolog\_grounding.py} segue una filosofia di \textit{graceful degradation}: ogni fase può
+fallire senza compromettere il sistema. Se Tree-sitter è irreperibile, si ricade sul fallback a regex; se il
+tipo resta irrisolto, il campo è omesso e la riparazione procede con una direttiva parzialmente istanziata; se
+\texttt{root\_cause.txt} non è reperibile, si usano le catene causali grezze. Questo evita \textit{single points of failure}.
 
 \subsection{Integrazione nella Pipeline Python: Il Modulo FaultOracle}
 
-L'integrazione del processo diagnostico formale all'interno della pipeline Python di HybridRepair 
-è orchestrata dal modulo \texttt{fault\_oracle/}. Questo modulo agisce da livello di mediazione 
-tra il motore di inferenza Prolog e le successive fasi di riparazione neurale, garantendo un 
-disaccoppiamento architetturale ottimale.
-
-Il punto di ingresso primario è costituito dal componente \texttt{logicfl\_runner.py}, 
-la cui responsabilità è gestire il ciclo di vita dell'analisi LogicFL. Al fine di minimizzare 
-l'overhead computazionale, esso implementa un meccanismo di controllo intelligente che previene 
-riesecuzioni ridondanti della diagnostica qualora i risultati siano già disponibili:
-\enlargethispage{3\baselineskip}
-\begin{lstlisting}[language=Python]
-def run_logicfl(bug_id: str, force_rerun: bool = False) -> Path:
-    fault_locs = result_dir / "fault_locs.txt"
-
-    # Riuso dei risultati esistenti per evitare overhead computazionale
-    if fault_locs.exists() and not force_rerun:
-        print(f"  [fault_oracle] LogicFL gia' eseguito, riuso risultati")
-        return result_dir
-
-    # Tentativo di esecuzione tramite script di diagnostica batch
-    success = _try_run_diagnostics_script(bug_id)
-
-    # Fallback: esecuzione diretta dello script bash nella directory del bug
-    if not success:
-        success = _try_run_logic_fl_sh(bug_dir)
-
-    return result_dir
-\end{lstlisting}
-
-A seguito della terminazione del motore Prolog, il controllo passa al componente \texttt{logicfl\_parser.py}. 
-Quest'ultimo coordina la complessa orchestrazione della lettura dei file generati e, crucialmente, 
-l'arricchimento semantico (\textit{Semantic Grounding}) delle informazioni estratte. Il parser 
-consolida molteplici flussi di dati diagnostici, tra cui le localizzazioni dei guasti, le catene 
-causali grezze e l'analisi strutturale dell'AST:
+L'integrazione del processo diagnostico nella pipeline Python è orchestrata dal modulo \texttt{fault\_oracle/},
+che media tra il motore Prolog e le fasi di riparazione neurale. Il modulo \texttt{logicfl\_runner.py} gestisce
+il ciclo di vita dell'analisi LogicFL, riusando i risultati già disponibili per evitare riesecuzioni ridondanti.
+Terminato il motore Prolog, \texttt{logicfl\_parser.py} legge i file generati e ne coordina l'arricchimento
+semantico (\textit{Semantic Grounding}), consolidando localizzazioni, catene causali grezze e analisi AST nel
+report finale:
 
 \begin{lstlisting}[language=Python]
 def parse_logicfl_output(bug_dir: Path) -> FaultReport:
@@ -1105,10 +658,7 @@ def parse_logicfl_output(bug_dir: Path) -> FaultReport:
     )
 \end{lstlisting}
 
-Il \texttt{FaultReport} finale funge da interfaccia strutturata tra la fase di diagnostica 
-appena descritta e il resto della pipeline (in particolare la fase di riparazione iterativa), 
-preservando tutte le informazioni raccolte.
-Mettendo a disposizione le righe di codice sospette, il testo esplicativo dell'errore e 
-l'analisi causale dettagliata, il sistema garantisce che le fasi successive di generazione 
-della patch dispongano di tutto il contesto necessario per portare a termine la pipeline in modo ottimale.
+Il \texttt{FaultReport} finale è l'interfaccia strutturata tra la diagnostica e le fasi successive della
+pipeline: mettendo a disposizione righe sospette, spiegazione dell'errore e analisi causale, garantisce che la
+generazione della patch disponga di tutto il contesto necessario.
 
