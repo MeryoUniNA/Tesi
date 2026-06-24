@@ -274,8 +274,13 @@ Ogni elemento dell'\texttt{AGENT\_SYSTEM\_PROMPT} vincola l'output del modello, 
 Nella fase \texttt{EXPLORE} l'agente costruisce la comprensione contestuale del difetto prima di alterare il
 codice, invocando tre strumenti del toolkit: \texttt{read\_file}, \texttt{search\_symbol} e
 \texttt{get\_method\_signature}. La fase potrebbe sembrare ridondante, dato che il prompt iniziale fornisce già il
-metodo difettoso, la \texttt{RepairSpec} e gli \texttt{Ingredients}; tuttavia tali informazioni sono localizzate
-attorno all'epicentro del difetto, e due categorie di anomalie rendono insufficiente questo perimetro:
+metodo difettoso, la \texttt{RepairSpec} e parte degli ingredienti. A differenza del prompt one-shot della Fase 2
+--- che pre-carica tutte e quattro le categorie di vocabolario --- il \texttt{PatchAgent} riceve un'iniezione
+volutamente più snella, limitata ai campi e ai metodi pubblici della classe: import, variabili locali e firme
+esatte non vengono pre-caricati. Essendo l'agente dotato di strumenti (\texttt{read\_file}, \texttt{search\_symbol},
+\texttt{get\_method\_signature}), può infatti recuperarli su richiesta solo quando servono, evitando di saturare il
+contesto con informazioni che potrebbero non essere necessarie. Inoltre, anche le informazioni iniettate sono
+localizzate attorno all'epicentro del difetto, e due categorie di anomalie rendono insufficiente questo perimetro:
 
 \begin{description}
     \item[Bug con propagazione cross-method:] La causa radice non sempre risiede nel metodo in cui

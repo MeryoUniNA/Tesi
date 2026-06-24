@@ -18,11 +18,11 @@ SpecReason mira a risolvere due famiglie di fallimento tipiche dell'APR basato s
 
 Per mitigare queste criticità, SpecReason si avvale di due meccanismi complementari: l'\textbf{Ingredient Forge},
 che raccoglie proattivamente il vocabolario reale delle API dal codice sorgente e lo inietta nel prompt, e il
-paradigma \textbf{Chain-of-Thought} (\texttt{spec\_builder.py}), che costringe il modello a esplicitare un
+paradigma \textbf{Chain-of-Thought} (\texttt{spec\_builder\\.py}), che costringe il modello a esplicitare un
 ragionamento sul difetto prima di scriverne la correzione. Un terzo livello di salvaguardia, \textbf{SpecCritic}
 (\texttt{spec\_critic.py}), implementa un ciclo di auto-critica in cui una seconda chiamata al modello valuta la
 coerenza logica della specifica confrontandola con le prove empiriche (stack trace, test falliti). L'artefatto
-finale è una \texttt{RepairSpec} validata, contesto privilegiato per la Fase 3 (\texttt{PatchAgent}).
+finale è una \texttt{RepairSpec} validata, contesto per la Fase 3 (\texttt{PatchAgent}).
 
 \newpage
 \subsection{Il Flusso Dati}
@@ -56,7 +56,7 @@ spec = validate_spec(spec, fault_report, client=client)
     \node[io]    (input)   at (0, 0) {FaultReport (Phase 1 output)};
     
     \node[box]   (forge)   at (0, -2) {\textbf{Ingredient Forge}\\(\texttt{ingredient\_forge.py})};
-    \node[data]  (ingr)    at (6.5, -2) {\textbf{Ingredients:}\\class\_fields, public\_methods,\\imported\_types, local\_variables,\\superclass\_methods};
+    \node[data]  (ingr)    at (6.5, -2) {\textbf{Ingredients:}\\class\_fields, public\_methods,\\imported\_types, local\_variables};
     
     \node[box]   (builder) at (0, -4.5) {\textbf{SpecBuilder}\\(\texttt{spec\_builder.py})};
     \node[data]  (llm1)    at (6.5, -4.5) {\textbf{LLM Call \#1} (temp=0.1, CoT)\\$\rightarrow$ \texttt{RepairSpec} (draft)};
@@ -83,30 +83,31 @@ spec = validate_spec(spec, fault_report, client=client)
 \end{figure}
 
 
-Il processo prende in input il \texttt{FaultReport} diagnostico. L'aspetto architetturale di maggior rilievo è
-che le istruzioni fornite al modello sono costruite dinamicamente dal contesto, superando l'approccio dei prompt
-statici. Questa composizione fonde due tipi di informazione: le catene causali semanticamente ancorate prodotte
-da \texttt{LogicFL} (risolte tramite \texttt{prolog\_grounding.py}) e gli ``ingredienti'' statici estratti dal
-codice sorgente da \texttt{ingredient\_forge.py}. Ogni prompt risulta così radicato nella specificità del bug
-corrente, evitando che il modello si appoggi alla propria memoria parametrica, che in debugging potrebbe
-suggerire pattern obsoleti o API inesistenti.
+La Fase 2 costruisce il prompt di riparazione fondendo due fonti di informazione complementari. La prima è il
+\texttt{FaultReport} prodotto dalla Fase 1, che porta con sé le catene causali semanticamente ancorate di
+\texttt{LogicFL} (risolte da \texttt{prolog\_grounding.py}): indicano al modello \emph{dove} e \emph{perché} si
+manifesta il difetto. La seconda sono gli ``ingredienti'' statici, i nomi di metodi, campi e firme realmente
+presenti nella classe, estratti dal codice sorgente da \texttt{ingredient\_forge.py}: indicano al modello
+\emph{con quali strumenti reali} costruire la patch. Combinando le due, ogni prompt resta radicato nella
+specificità del bug corrente, invece di affidarsi alla memoria parametrica del modello, che 
+potrebbe suggerire pattern obsoleti o API inesistenti.
 
 \subsection{Ingredient Forge: la Raccolta Proattiva del Contesto Statico}
 \label{subsec:3_3_2}
 
-L'allucinazione — la generazione di patch che invocano metodi o campi inesistenti nella libreria target —
+L'allucinazione, la generazione di patch che invocano metodi o campi inesistenti nella libreria target,
 scaturisce dal fatto che il modello, addestrato su milioni di frammenti Java eterogenei, apprende le distribuzioni
 statistiche dei pattern di codifica ma non ha accesso all'interfaccia pubblica effettiva della classe da riparare.
 Per neutralizzarla, il modulo \texttt{ingredient\_forge.py} implementa la \textit{context injection}: anziché
 confidare nella memoria parametrica del modello, il vocabolario reale della classe viene estratto dal codice
-sorgente difettoso e iniettato nel prompt come vincolo esplicito. L'approccio trae ispirazione da sistemi allo
-stato dell'arte come \texttt{FitRepair} \cite{xia2024fitrepair} e \texttt{ReinFix} \cite{zhang2026reinfix}, che
+sorgente difettoso e iniettato nel prompt come vincolo esplicito. L'approccio trae ispirazione da sistemi 
+come \texttt{FitRepair} \cite{xia2024fitrepair} e \texttt{ReinFix} \cite{zhang2026reinfix}, che
 hanno mostrato come la pre-iniezione di codice reale riduca le allucinazioni; \texttt{HybridRepair} ne sistematizza
 l'idea estraendo molteplici categorie di ingredienti statici.
 
 \subsubsection{Architettura del Modulo ingredient\_forge.py}
-L'architettura di \texttt{ingredient\_forge.py} si impernia sulla funzione coordinatrice \texttt{collect()}, che
-orchestra cinque funzioni private di analisi sintattica per produrre un oggetto \texttt{Ingredients}. La scelta
+\texttt{Ingredient\_forge.py} si basa sulla funzione coordinatrice \texttt{collect()}, che
+orchestra una serie di funzioni private di analisi sintattica per produrre un oggetto \texttt{Ingredients}. La scelta
 metodologica più rilevante è l'uso di espressioni regolari (regex) per il parsing del sorgente grezzo, scartando
 i parser AST completi (Tree-sitter, JavaParser). La decisione è motivata da esigenze di robustezza: nell'APR il
 codice in input è per definizione difettoso e un parser AST rigido fallirebbe in modo irrecuperabile su input
@@ -136,133 +137,38 @@ regex estrarrebbero erroneamente firme di metodi menzionate a scopo
 documentale all'interno del \texttt{JavaDoc} o frammenti di codice ``commentato''
 dagli sviluppatori.
 
-Il cuore estrattivo del modulo è particolarmente evidente nella logica
-ingegneristica che governa l'espressione regolare \texttt{\_PUBLIC\_METHOD\_RE}, deputata alla
-cattura delle firme dei metodi. Anziché limitarsi a una
-semplice ricerca di nomi e parentesi, la regex è
-strutturata con gruppi di cattura sofisticati che riflettono precise
-scelte di design:
-
-Gestione delle annotazioni: Il codice di produzione Java è
-tipicamente ricco di annotazioni. Un gruppo non catturante 
-\texttt{((?:@\textbackslash{}w+(?:\textbackslash{}([\^{})]*\textbackslash{})\textbackslash{})?\textbackslash{}s*)*)}
-è stato progettato per ignorare in modo elegante zero o
-più annotazioni, come \texttt{@Override}, \texttt{@Nullable} o \texttt{@SuppressWarnings("unchecked")}. Se
-la regex non gestisse queste strutture, la quasi totalità
-dei metodi sovrascritti o annotati verrebbe semplicemente ignorata dall'estrattore.
-
-Gestione flessibile dei modificatori: I modificatori di accesso e
-di comportamento (static, final, abstract, synchronized, ecc.) sono resi
-opzionali all'interno del pattern, permettendo al sistema di mappare
-con successo ogni combinazione legale permessa dalla grammatica Java.
-
-Supporto ai tipi generici: Un ulteriore gruppo dedicato \texttt{((?:<[\^{}>]+>\textbackslash{}s+)?)}
-permettedi riconoscere e oltrepassare le dichiarazioni di tipi generici
-a livello di metodo (es. \texttt{public <T extends Comparable<T>> T max(T a, T b)}).
-Poiché le classi di utilità in dataset come \texttt{Defects4J}
-fanno un uso massiccio dei generics, catturarli correttamente garantisce
-che la firma estratta sia integra e fedele alla dichiarazione
-originale.
+Come mostra il listing, \texttt{\_PUBLIC\_METHOD\_RE} non si limita a cercare nomi e parentesi: i gruppi opzionali
+assorbono annotazioni (\texttt{@Override}, \texttt{@Nullable}), modificatori (\texttt{static}, \texttt{final},
+\texttt{synchronized}) e parametri di tipo generico a livello di metodo. Catturare l'intera firma è essenziale nelle
+classi di utilità di \texttt{Defects4J}, che fanno largo uso di annotazioni e generics: senza questi gruppi la quasi
+totalità dei metodi sovrascritti o annotati verrebbe ignorata dall'estrattore.
 
 \subsubsection{Le Categorie di Contesto Statico}
 \label{subsubsec:3_3_2_3}
-La funzione pubblica \texttt{collect()}, cuore del modulo, orchestra l'estrazione
-di informazioni costruendo un oggetto popolato da cinque attributi distinti,
-ciascuno dei quali rappresenta una specifica categoria di contesto statico.
-L'estrazione mirata di queste cinque categorie è vitale per fornire
-al modello linguistico una mappa completa e accurata dell'ambiente di
-esecuzione, scongiurando errori di compilazione nella patch finale.
+Il contesto statico iniettato nel prompt si articola in quattro categorie, ciascuna prodotta da una funzione
+privata dedicata e fornita al modello come vincolo esplicito.
 \begin{itemize}
-\item \textbf{1. Campi della classe} Questa categoria raccoglie i campi di
-istanza e statici della classe sotto esame. 
-
-\begin{lstlisting}[language=Python]
-# Estratto da _extract_fields() in ingredient_forge.py
-_FIELD_RE = re.compile(
-    r"^\s*(?:(?:public|protected|private|static|final|transient|volatile)\s+)*"
-    r"([\w<>\[\],.?]+)\s+(\w+)\s*[;=]",
-    re.MULTILINE,
-\end{lstlisting}
-
-Il pattern di estrazione è progettato per riconoscere le diverse combinazioni di visibilità
-e di modificatori, separando il tipo e il nome
-della variabile. \\Viene inoltre applicato un filtro rigoroso per escludere
-eventuali falsi positivi derivanti da parole chiave del linguaggio Java
-(come \texttt{class}, \texttt{interface} o \texttt{return}). L'inclusione di questi campi nel
-prompt è cruciale: essa rivela al modello lo stato interno
-attualmente disponibile all'interno della classe (ad esempio, le variabili d'istanza),
-permettendogli di utilizzarlo per la risoluzione del bug senza dover
-fare affidamento sulla propria memoria parametrica.
-\item \textbf{2. Metodi pubblici della classe} Le firme complete dei metodi
-pubblici, comprensive di modificatori di accesso, tipo di ritorno, nome
-e parametri, vengono estratte sistematicamente. Il sistema è in grado
-di catturare anche i costruttori pubblici e protetti, distinguendoli dai
-metodi ordinari. 
-
-\begin{lstlisting}[language=Python]
-_PUBLIC_CONSTRUCTOR_RE = re.compile(
-    r"^\s*"
-    r"(?:@\w+(?:\([^)]*\))?\s*)*"
-    r"(public|protected)\s+"
-    r"(\w+)\s*\(([^)]*)\)\s*(?:throws [^{]+)?\s*\{",
-    re.MULTILINE,
-\end{lstlisting}
-
-La gestione delle clausole \texttt{throws} consente di riconoscere le firme anche con eccezioni controllate; una
-fase di deduplicazione evita che metodi ripetuti (es. in classi anonime) inquinino il prompt. Fornire questa
-lista garantisce che il modello invochi solo metodi realmente esistenti e accessibili.
-\item \textbf{3. Metodi della superclasse} \texttt{HybridRepair} risolve ed estrae anche i metodi ereditati. La
-logica opera in due fasi: prima una regex cattura il nome della superclasse dalla dichiarazione \texttt{extends};
-
-\begin{lstlisting}[language=Python]
-_EXTENDS_RE = re.compile(
-    r"\bextends\s+([\w.]+)",
-)
-\end{lstlisting}
-
-poi il sistema ricerca ricorsivamente il file sorgente corrispondente nei source roots del progetto.
-
-\begin{lstlisting}[language=Python]
-# Estratto della seconda fase in _resolve_superclass_file()
-simple = super_name.split(".")[-1] + ".java"
-for root in source_roots:
-    hits = list(root.rglob(simple))
-    if hits:
-        return hits[0] # Ritorna il file sorgente della superclasse
-\end{lstlisting}
-
-
-Questa categoria è importante soprattutto nei bug NULL\_RETURN legati all'override: rendere l'LLM consapevole che
-un metodo sovrascrive un'implementazione genitrice lo guida verso patch più rispettose del contratto ereditato.
-
-\item \textbf{4. Tipi importati} L'estrazione degli import assolve a due funzioni strategiche.
-
-\begin{lstlisting}[language=Python]
-_IMPORT_RE = re.compile(
-    r"^\s*import\s+([\w.]+)\s*;",
-    re.MULTILINE,
-\end{lstlisting}
-
-Da un lato espone il namespace esatto dei tipi utilizzabili nel file, evitando che il modello proponga classi non
-importate; dall'altro segnala la versione delle dipendenze in uso (sapere se il file usa
-\texttt{org.apache.commons.lang.StringUtils} o la variante \texttt{lang3} guida verso costrutti compatibili con
-l'ambiente del bug).
-\item \textbf{5. Variabili locali nel corpo del metodo difettoso} È la categoria a maggior specificità
-contestuale: l'estrazione è limitata al corpo del metodo che contiene il difetto, analizzando le dichiarazioni
-visibili in prossimità della riga di fault (incluso il modificatore \texttt{final}).
-
-\begin{lstlisting}[language=Python]
-# Estratto da _extract_local_variables() in ingredient_forge.py
-var_re = re.compile(
-    r"^\s*(?:final\s+)?([\w<>\[\],.?]+)\s+(\w+)\s*[;=]"
-)
-\end{lstlisting}
-
-
-Questa informazione previene i conflitti di scoping: costringe il modello a riutilizzare variabili già
-dichiarate e inizializzate, evitando re-inizializzazioni ridondanti o nuovi identificatori in collisione che
-causerebbero errori di compilazione.
+\item \textbf{Campi della classe.} I campi di istanza e statici rivelano al modello lo stato interno disponibile,
+evitando che lo ricostruisca dalla propria memoria parametrica. L'estrazione filtra i falsi positivi derivanti da
+parole chiave Java (\texttt{class}, \texttt{interface}, \texttt{return}).
+\item \textbf{Metodi pubblici della classe.} Le firme complete (modificatori, tipo di ritorno, nome, parametri),
+inclusi i costruttori pubblici e protetti, garantiscono che il modello invochi solo metodi realmente esistenti e
+accessibili; una deduplicazione evita che metodi ripetuti nelle classi anonime inquinino il prompt.
+\item \textbf{Tipi importati.} Gli \texttt{import} espongono il namespace dei tipi utilizzabili --- impedendo
+proposte di classi non importate --- e segnalano la versione delle dipendenze in uso (es. \texttt{commons.lang}
+contro la variante \texttt{lang3}), orientando verso costrutti compatibili.
+\item \textbf{Variabili locali nel metodo difettoso.} È la categoria a maggior specificità contestuale:
+limitata al corpo del metodo coinvolto nel difetto, previene i conflitti di scoping costringendo il modello a
+riutilizzare variabili già dichiarate, anziché re-inizializzarle o introdurre identificatori in collisione.
 \end{itemize}
+
+Oltre alle quattro categorie di vocabolario, l'\textit{Ingredient Forge} rileva anche le \textbf{località gemelle}
+(\texttt{sibling\_occurrences}): altre posizioni nella stessa classe in cui ricorre \emph{verbatim} l'espressione
+che provoca il crash. Quando lo stesso difetto latente è replicato in metodi ``specchio'' --- come nel bug
+JacksonDatabind-80, dove era stata corretta una sola delle due occorrenze --- una patch limitata alla riga di
+crash resterebbe parziale. Per questo le occorrenze gemelle non confluiscono nel blocco di vocabolario, ma in una
+sezione di avviso dedicata (\emph{Suspect twin locations}) che invita il modello a correggerle tutte.
+
 \subsubsection{La Struttura Dati Ingredients}
 \label{subsubsec:3_3_2_4}
 Il contratto di dati è formalizzato nella struttura \texttt{Ingredients}.
@@ -279,22 +185,40 @@ class Ingredients:
     public_methods: List[str] = field(default_factory=list)
     """Firme dei metodi pubblici/protetti della classe target."""
 
-    superclass_methods: List[str] = field(default_factory=list)
-    """Metodi pubblici ereditati dalle superclassi dirette."""
-
     imported_types: List[str] = field(default_factory=list)
     """Tipi fully-qualified importati nel file sorgente."""
 
     local_variables: List[str] = field(default_factory=list)
     """Variabili visibili nello scope della riga di errore."""
 
-    caller_context: str = ""
+    sibling_occurrences: List[str] = field(default_factory=list)
+    """Occorrenze dell'espressione di crash altrove nella stessa
+    classe (potenziali localita gemelle da correggere insieme)."""
 \end{lstlisting}
 
 La struttura è volutamente ``piatta'' (liste di stringhe a un solo livello), in contrasto con AST o oggetti JSON
 annidati. Le stringhe sono il formato nativo dei token su cui operano gli LLM: fornendole pre-formattate si
 elimina una serializzazione costosa e soggetta a perdita di informazioni, massimizzando efficienza e
 intelligibilità dell'input.
+
+\paragraph{Esempio: gli \texttt{Ingredients} estratti per Csv-4.} Applicando \texttt{collect()} alla classe
+\texttt{CSVParser}, il blocco di contesto statico iniettato nel prompt assume la forma seguente:
+
+\begin{lstlisting}
+Campi:       CSVFormat format, Lexer lexer, List<String> record,
+             long recordNumber, Token reusableToken
+Metodi:      public List<CSVRecord> getRecords(), public boolean isClosed(),
+             public long getCurrentLineNumber(), public Iterator<CSVRecord> iterator(),
+             public CSVParser(final Reader reader, final CSVFormat format)
+Import:      java.util.LinkedHashMap, java.util.Map, java.util.ArrayList, ...
+Locali:      hdrMap, formatHeader, header   # nel corpo di initializeHeader()
+\end{lstlisting}
+
+Sono questi gli ``strumenti reali'' con cui il modello costruisce la patch: in particolare, la presenza di
+\texttt{java.util.LinkedHashMap} fra gli import rende lecita la riparazione vincente
+\texttt{new LinkedHashMap<>(this.headerMap)}, mentre la lista dei metodi pubblici impedisce al modello di invocare
+API inesistenti nella classe.
+
 \newpage
 \subsubsection{Il Meccanismo di Iniezione: dalla Struttura al Prompt}
 \label{subsubsec:3_3_2_5}
@@ -322,21 +246,22 @@ Il meccanismo concentra tre decisioni di prompt engineering:
     \item \textbf{Fallback ``(none available)''} per le liste vuote: una stringa esplicita anziché uno spazio
     vuoto evita che il modello interpreti il campo come un errore di formattazione o un dato mancante.
 \end{itemize}
-Per un bug come \texttt{JacksonDatabind-3}, l'iniezione produce una sezione del prompt della forma:
+Per Csv-4, l'iniezione produce una sezione del prompt della forma:
 
 \begin{verbatim}
 ### Available API (Repair Ingredients)
-**Class fields:** 
-`ObjectMapper _objectMapper`, `boolean _configured`, ...
-**Public methods:** 
-`public void setMapper(ObjectMapper mapper)`, ...
-**Imported types:** 
-`com.fasterxml.jackson.databind.ObjectMapper`, `java.util.List`, ...
+**Class fields:**
+`CSVFormat format`, `Lexer lexer`, `List<String> record`, ...
+**Public methods:**
+`public List<CSVRecord> getRecords()`, `public boolean isClosed()`,
+`public CSVParser(final Reader reader, final CSVFormat format)`, ...
+**Imported types:**
+`java.util.LinkedHashMap`, `java.util.Map`, `java.util.ArrayList`, ...
 \end{verbatim}
 \enlargethispage{1\baselineskip}
 Tramite questa iniezione, il prompt si ancora all'istanza concreta del bug, vincolando lo spazio decisionale del
 modello alla realtà del codice sorgente.
-
+\clearpage
 \subsection{Il Paradigma Chain-of-Thought: \texttt{spec\_builder.py}}
 Il modulo \texttt{spec\_builder.py} è l'infrastruttura di ragionamento della Fase 2. Dopo la raccolta del contesto
 statico, il sistema deve tradurre le informazioni diagnostiche in un piano d'azione coerente, affidandosi al
@@ -352,8 +277,8 @@ ragionamento esplicitato nei token antecedenti \cite{wei2022chain}.
 Nell'APR il paradigma è imprescindibile: chiedere a un LLM di generare direttamente una patch da un report di
 errore equivale a forzare un problema ``multi-hop'' in un singolo salto cognitivo, fondendo quattro operazioni
 (comprendere il difetto, dedurre il comportamento corretto, isolare la differenza minima, tradurla in sintassi
-Java). Costretto a eseguirle in parallelo, il modello tende a scorciatoie cognitive — pattern di fix generici
-come un null-check casuale — rinunciando a una soluzione mirata per l'istanza.
+Java). Costretto a eseguirle in parallelo, il modello tende a scorciatoie cognitive, pattern di fix generici
+come un null-check casuale, rinunciando a una soluzione mirata per l'istanza.
 
 La validità del CoT nell'APR è dimostrata da sistemi come \texttt{ThinkRepair} \cite{yin2024thinkrepair}, dove
 l'anteposizione di un passo di ragionamento (``think step by step'') incrementa il tasso di successo su
@@ -362,7 +287,6 @@ richiesta di ragionamento libera, costringe il modello a rispondere a tre interr
 rigoroso, rendendo ogni fase parzialmente verificabile in modo automatico.
 
 
-\newpage
 \subsubsection{Architettura del System Prompt di SpecBuilder}
 \label{subsubsec:3_3_3_2}
 Il prompting di \texttt{spec\_builder.py} sfrutta l'architettura a messaggi dell'API OpenAI, separando un
@@ -447,10 +371,16 @@ What is the SMALLEST conceptual change that fixes the bug? Describe it \
 in plain English (e.g., "Add a null check for `result` before line 42, \
 returning an empty array if null"). Do NOT write code.
 
+### 4. Fix Locations
+For EACH fault location listed above (and each suspect twin location), \
+state whether the fix must touch it, and why. A fix that silences the \
+crash point while leaving an upstream cause unaddressed is INVALID.
+
 Respond in this exact format:
 <flawed_behavior>...</flawed_behavior>
 <intended_behavior>...</intended_behavior>
 <minimal_fix>...</minimal_fix>
+<fix_locations>...</fix_locations>
 \end{lstlisting}
 
 Il template ha una struttura bipartita separata da un delimitatore orizzontale (\texttt{---}): un Blocco di
@@ -464,16 +394,51 @@ dall'Ingredient Forge. Il loro posizionamento in fondo al blocco non è casuale:
 prima del Task sfrutta il \textit{recency bias} dei Transformer \cite{zhao2021calibrate}, mitigando l'effetto
 \textit{Lost in the Middle} \cite{liu2024lost} e riducendo il rischio che l'attenzione divaghi verso librerie allucinate.
 
-\textbf{Il Blocco di Compito}, oltre il separatore, chiede al modello di rispondere a tre domande specifiche:
+\textbf{Il Blocco di Compito}, oltre il separatore, chiede al modello di rispondere a quattro domande specifiche:
 \begin{itemize}
     \item \textit{Flawed Behavior}: cosa fa di sbagliato il metodo, con la riga esatta;
     \item \textit{Intended Behavior}: cosa dovrebbe fare, inferendolo dalle aspettative dei test o dai JavaDoc;
     \item \textit{Minimal Fix}: la più piccola alterazione logica che risolve il problema, in linguaggio naturale
-    e senza scrivere codice.
+    e senza scrivere codice;
+    \item \textit{Fix Locations}: per ogni località della catena causale (e ogni possibile gemella) se la patch
+    deve toccarla e perché --- una correzione che zittisce il crash ma lascia irrisolta una causa a monte è invalida.
 \end{itemize}
 La separazione tramite delimitatori impedisce la sovrapposizione tra contesto e istruzioni \cite{white2023prompt};
 l'incapsulamento della risposta in tag pseudo-XML (\texttt{<flawed\_behavior>}, ecc.) applica il \textit{format
 manager pattern} \cite{white2023prompt}, essenziale per il parsing deterministico a valle.
+
+Per Csv-4, il modello produce la \texttt{RepairSpec} seguente (riportata nella forma a tag elicitata dal template;
+nel prompt della Fase 3 viene poi riformattata in markdown):
+
+\begin{lstlisting}
+<flawed_behavior>
+A NullPointerException occurs in getHeaderMap() at line 288 when it
+creates a new LinkedHashMap from the headerMap field, which is null.
+The initializeHeader() method (line 351) assigns null to hdrMap under
+certain conditions, and this null propagates to headerMap via the
+constructor (line 244). Dereferencing headerMap without a null check
+is the direct cause of the crash.
+</flawed_behavior>
+<intended_behavior>
+getHeaderMap() should return a copy of the headerMap field when it is
+initialized. If headerMap is null, the method should handle this
+gracefully -- returning null (if allowed by the class contract) or an
+empty map -- instead of crashing, matching the test expectations.
+</intended_behavior>
+<minimal_fix>
+Add a null check in getHeaderMap() at line 288 so the null case is
+handled gracefully; optionally adjust initializeHeader() (line 351)
+to avoid propagating null. The change is minimal yet sufficient to
+prevent the NullPointerException.
+</minimal_fix>
+<fix_locations>
+Location 1 (CSVParser:288) -- must change: crash point, add the null
+guard here. Location 2 (CSVParser:351) -- optional: could stop
+initializeHeader() from returning null. Location 3 (CSVParser:244)
+-- no change needed: the constructor correctly assigns the result.
+</fix_locations>
+\end{lstlisting}
+
 
 \subsubsection{La Costruzione Dinamica del Prompt: \_build\_spec\_prompt()}
 \label{subsubsec:3_3_3_4}
@@ -539,14 +504,13 @@ garantisce la riproducibilità della specifica.
 La risposta del modello deve essere decodificata in una struttura dati. Il sistema impone l'incapsulamento delle
 deduzioni in un formato XML semi-strutturato con tre tag (\texttt{<flawed\_behavior>}, \texttt{<intended\_behavior>},
 \texttt{<minimal\_fix>}). La scelta dell'XML rispetto al JSON è motivata dalla robustezza: la grammatica JSON è
-severa (escape delle virgolette, newline non ammessi nelle stringhe) e forzare un LLM a produrre JSON valido con
+severa e forzare un LLM a produrre JSON valido con
 testo libero multiparagrafo comporta un rischio elevato di errori di parsing \cite{structuredrag2024}. L'XML, al
 contrario, tollera nativamente testo discorsivo e ritorni a capo \cite{XMLPrompting2026}, ed è ampiamente
 rappresentato nel corpus di pre-training (HTML, file di configurazione), risultando più affidabile.
 Per estrarre il contenuto dei tag, \texttt{spec\_builder.py} implementa un parser a espressioni regolari.
 
-La funzione interna di parsing, \texttt{\_parse\_spec\_response()}, si avvale di una regex meticolosamente
-progettata: \texttt{rf"<\{tag\}>\textbackslash{}s*(.*?)\textbackslash{}s*</\{tag\}>"} accoppiata al flag di compilazione \texttt{re.DOTALL}.
+La funzione interna di parsing, \texttt{\_parse\_spec\_response()}, si avvale di una regex:\\ \texttt{rf"<\{tag\}>\textbackslash{}s*(.*?)\textbackslash{}s*</\{tag\}>"} accoppiata al flag di compilazione \texttt{re.DOTALL}.
 
 \begin{lstlisting}[language=Python]
 def _parse_spec_response(response: str) -> RepairSpec:
@@ -560,31 +524,16 @@ def _parse_spec_response(response: str) -> RepairSpec:
         flawed_behavior=extract("flawed_behavior"),
         intended_behavior=extract("intended_behavior"),
         minimal_fix=extract("minimal_fix"),
+        fix_locations=extract("fix_locations"),
 \end{lstlisting}
 
-L'ingegneria di questa espressione regolare garantisce la massima tolleranza
-alle imprefezioni stilistiche del modello:
-Il flag \texttt{re.DOTALL} è vitale poiché istruisce il metacarattere punto
-(.) a riconoscere anche i caratteri di newline (\textbackslash{}n),
-permettendo la cattura di testi distribuiti su più righe.
-I gruppi \textbackslash{}s* posizionati subito dopo il tag di apertura
-e subito prima del tag di chiusura assorbono in
-modo flessibile eventuali spaziature o ritorni a capo spuri
-introdotto dal modello, garantendo che il blocco di testo
-utile venga catturato in modo pulito.
-Il cuore della regex è il gruppo di cattura
-\texttt{(.*?)}, che utilizza il quantificatore lazy \texttt{?}. In
-assenza di questo quantificatore, l'operatore \texttt{.*} si comporterebbe in
-modo ``ingordo'', consumando tutto il testo fino all'ultimo tag
-di chiusura incontrato nell'intera stringa. Se il modello dovesse
-inavvertitamente generare tag duplicati, un quantificatore avido distruggerebbe la
-frammentazione logica della risposta. Il quantificatore lazy, al contrario,
-garantisce che l'estrazione si fermi esattamente al primo tag
-di chiusura corrispondente, garantendo una cattura robusta e sicura.
-Un'ultima chiamata al metodo \texttt{.strip()} rimuove eventuali spaziature marginali
-residue, restituendo il testo puro.
-Il risultato di questo processo di estrazione viene infine
-incapsulato all'interno della struttura \texttt{RepairSpec}.
+La regex è progettata per tollerare le imperfezioni stilistiche del modello. Il flag \texttt{re.DOTALL} consente al
+punto di catturare anche i newline, così da estrarre blocchi distribuiti su più righe, mentre i gruppi
+\texttt{\textbackslash{}s*} ai bordi assorbono spaziature e ritorni a capo spuri. Il dettaglio cruciale è il
+quantificatore \emph{lazy} in \texttt{(.*?)}: un \texttt{.*} ``ingordo'' catturerebbe tutto fino all'ultimo tag di
+chiusura della stringa, e in presenza di tag duplicati distruggerebbe la frammentazione della risposta, mentre
+la versione lazy si ferma al primo tag di chiusura corrispondente. Il \texttt{.strip()} finale rimuove le spaziature
+marginali residue, e il risultato viene incapsulato nella struttura \texttt{RepairSpec}.
 
 \begin{lstlisting}[language=Python]
 @dataclass
@@ -601,35 +550,23 @@ class RepairSpec:
     minimal_fix: str = ""
     """Conceptual description of the smallest change that fixes the bug."""
 
+    fix_locations: str = ""
+    """Verdetto per-localita: quali punti della catena causale la
+    patch deve toccare e perche."""
+
+    confidence: float = 0.0
+    """Auto-valutazione di affidabilita prodotta dal SpecCritic (0.0-1.0)."""
 \end{lstlisting}
 
 La \texttt{RepairSpec} è un oggetto immutabile, artefatto di trasferimento verso le fasi successive. Mantenere i
-tre campi in linguaggio naturale anziché in linguaggi di specifica formale (Alloy, JML) è strategico: il
+campi diagnostici in linguaggio naturale anziché in linguaggi di specifica formale (Alloy, JML) è strategico: il
 linguaggio naturale è il medium ottimale per comunicare l'intento di correzione al \texttt{PatchAgent} della Fase 3.
-A titolo esemplificativo, per un bug come Chart-4 (NPE da dereferenziazione di un renderer non verificato), la
-\texttt{RepairSpec} parsata assume una forma analoga alla seguente:
-
-\begin{lstlisting}
-
-  "flawed_behavior": "The method getRenderer(int index) at line 1749 calls
-    this.renderers.get(index), which can return null when no renderer has been
-    set for the given index. The returned value is cast to XYItemRenderer and
-    immediately stored in `r`, which is then dereferenced at line 4493 without
-    a null check.",
-
-  "intended_behavior": "The method should return a non-null XYItemRenderer for
-    any valid index, falling back to the default renderer if no specific renderer
-    has been assigned to that index. The test expects that getRenderer(0) returns
-    the default renderer when the list at index 0 is null or empty.",
-
-  "minimal_fix": "After the cast on line 1749, add a null check: if `r` is null,
-    return the default renderer (obtainable via getBaseRenderer() or by iterating
-    the renderers list to find the first non-null entry).",
-
-\end{lstlisting}
-
-Questo artefatto cristallizza la comprensione del problema, trasformando dati di debug grezzi in un piano di
-riparazione leggibile e pronto per essere tradotto in codice.
+Ai quattro campi testuali prodotti da \texttt{SpecBuilder} si aggiunge il \texttt{confidence}, un punteggio
+numerico popolato in seguito dal \texttt{SpecCritic}. Applicato alla risposta del modello per Csv-4 (mostrata nella
+Sezione~\ref{subsubsec:3_3_3_3}), il parser popola i campi con la diagnosi del crash a riga~288, il comportamento
+atteso, la correzione minima e il verdetto per-località: è questo artefatto a cristallizzare la comprensione del
+problema, trasformando dati di debug grezzi in un piano di riparazione leggibile e pronto per essere tradotto in
+codice.
 
 \subsection{SpecCritic: Validazione Autonoma della Specifica di Riparazione}
 \label{subsec:3_3_4}
@@ -691,7 +628,13 @@ An analyst produced the following bug specification. Validate it.
 **Minimal Fix:**
 {minimal_fix}
 
+**Fix Locations (per-location verdict):**
+{fix_locations}
+
 ### Ground Truth (from test execution)
+
+**Fault Locations (causal chain from fault localization):**
+{fault_locations}
 
 **Stack Trace:**
 ```
@@ -708,7 +651,10 @@ An analyst produced the following bug specification. Validate it.
 1. Is the "Flawed Behavior" description consistent with the stack trace?
 2. Is the "Intended Behavior" plausible given the test expectations?
 3. Is the "Minimal Fix" truly minimal, or does it over-engineer the solution?
-4. Rate your confidence that this specification would lead to a correct fix (0.0-1.0).
+4. COVERAGE CHECK: does the "Fix Locations" verdict account for EVERY fault
+   location of the causal chain? Patching only the crash point while an
+   upstream cause stays broken cures the symptom, not the disease.
+5. Rate your confidence that this specification would lead to a correct fix (0.0-1.0).
 
 If the analysis is correct, respond with the SAME content.
 If corrections are needed, provide the corrected version.
@@ -717,26 +663,31 @@ Respond in this exact format:
 <flawed_behavior>...</flawed_behavior>
 <intended_behavior>...</intended_behavior>
 <minimal_fix>...</minimal_fix>
+<fix_locations>...</fix_locations>
 <confidence>0.X</confidence>
 """
 ```
 \end{lstlisting}
 
 
-Il primo elemento di rottura è la sezione ``Ground Truth'', che raggruppa stack trace e test falliti
-dall'esecuzione dinamica: la designazione segnala al modello che sono fatti empirici incontrovertibili, da far
-prevalere sulle inferenze testuali in caso di conflitto. A seguire, il template sostituisce le domande aperte con
-quattro criteri di validazione numerati che impediscono un'approvazione superficiale:
+Il primo elemento di rottura è la sezione ``Ground Truth'', che raggruppa le località di fault della catena
+causale, lo stack trace e i test falliti dall'esecuzione dinamica: la designazione segnala al modello che sono
+fatti empirici incontrovertibili, da far prevalere sulle inferenze testuali in caso di conflitto. A seguire, il
+template sostituisce le domande aperte con cinque criteri di validazione numerati che impediscono un'approvazione
+superficiale:
 \begin{enumerate}
     \item \textbf{Coerenza logica}: la descrizione del difetto è coerente con la ``Ground Truth''?
     \item \textbf{Plausibilità fattuale}: l'intento correttivo è supportato dalle aspettative dei test?
     \item \textbf{Minimalità}: la correzione è genuinamente minimale o scade nell'over-engineering? Criterio
-    critico nell'APR, dove le soluzioni invasive comportano un alto rischio di regressioni.
+    fondamentale nell'APR, dove le soluzioni invasive comportano un alto rischio di regressioni.
+    \item \textbf{Copertura della catena causale}: il verdetto \textit{Fix Locations} affronta \emph{ogni}
+    località della catena, e non solo il punto di crash. Lasciare irrisolta una causa a monte cura il sintomo,
+    non la malattia.
     \item \textbf{Confidence Score}: un giudizio quantitativo sulla robustezza della specifica.
 \end{enumerate}
 Infine, un'istruzione condizionale governa l'output: se la specifica è corretta, il modello restituisce l'XML
 identico; se individua falle, genera direttamente l'XML emendato. Questa biforcazione evita parafrasi stilistiche
-inutili e rende la critica immediatamente azionabile, arricchita dal quarto tag \texttt{<confidence>}, un float in
+inutili e rende la critica immediatamente azionabile, arricchita dal tag \texttt{<confidence>}, un float in
 [0.0, 1.0] che quantifica la fiducia del critico nel fix.
 
 \subsubsection{Il Parsing della Risposta e il Meccanismo di Fallback}
@@ -762,13 +713,14 @@ def _parse_critic_response(response: str) -> tuple[RepairSpec, float]:
         flawed_behavior=extract("flawed_behavior"),
         intended_behavior=extract("intended_behavior"),
         minimal_fix=extract("minimal_fix"),
+        fix_locations=extract("fix_locations"),
         confidence=confidence,
 \end{lstlisting}
 
 Da un punto di vista architetturale, questa funzione non si discosta dalla logica
 basata su espressioni regolari già impiegata nello \texttt{SpecBuilder}, ma la
-estende significativamente per accogliere l'estrazione del nuovo tag \texttt{<confidence>}. L'introduzione
-Il parsing del nuovo tag \texttt{<confidence>} richiede un float in [0.0, 1.0] e una gestione rigorosa: il modello
+estende per accogliere i tag aggiuntivi del critico: \texttt{<fix\_locations>}, trattato come gli altri campi
+testuali, e soprattutto \texttt{<confidence>}, che richiede un float in [0.0, 1.0] e una gestione rigorosa: il modello
 potrebbe omettere il tag, inserirvi testo discorsivo (es. \texttt{<confidence>High (0.9)</confidence>}) o restituire
 formati non convertibili. Di fronte a un \texttt{ValueError}/\texttt{TypeError} nel casting, la funzione adotta un
 fallback conservativo a 0.5. Il valore mediano è calibrato: 0.0 penalizzerebbe ingiustamente una specifica magari
@@ -784,7 +736,9 @@ che il fallimento di un singolo controllo paralizzi l'intera pipeline.
 \subsubsection{Il Flusso di Correzione Iterativa}
 \label{subsubsec:3_3_4_5}
 A differenza della Constitutional AI completa, che prevede cicli multi-iterativi fino a convergenza,
-\texttt{HybridRepair} implementa un'auto-critica a singola iterazione. La scelta deriva da vincoli ingegneristici:
+\texttt{HybridRepair} applica una sola critica per ogni specifica, con al più una ricostruzione condizionata dalla
+confidence (cfr. Sezione~\ref{subsec:3_3_5}): non un ciclo aperto fino a convergenza, ma al massimo due passaggi di
+build e critica. La scelta deriva da vincoli ingegneristici:
 ogni chiamata a \texttt{GPT-4o} introduce latenza (2--10 s) e costo per token, e cicli a tre o più iterazioni
 aggraverebbero i tempi della Fase 2 con un ROI computazionale sfavorevole \cite{chen2023frugalgpt}; in assenza di
 feedback esterni, le iterazioni successive alla prima non garantiscono un miglioramento proporzionale al costo
@@ -815,11 +769,23 @@ i due macro-moduli, separando nettamente la strategia dagli strumenti: la \textt
 naturale \emph{cosa} fare (comportamento difettoso, intento corretto, Minimal Fix) senza vincolarsi a implementazioni
 premature, mentre gli \texttt{Ingredients} descrivono \emph{con quali strumenti} operare, fornendo l'inventario delle
 API reali (campi, metodi, variabili locali, dipendenze). Il \texttt{PatchAgent} riceve così un duplice binario di
-guida — direzione semantica dalla \texttt{RepairSpec} e contenimento sintattico dagli \texttt{Ingredients} —
+guida, direzione semantica dalla \texttt{RepairSpec} e contenimento sintattico dagli \texttt{Ingredients},
 trasformandosi da decisore incerto a esecutore vincolato.
 
-L'interfaccia espone inoltre il valore \texttt{spec.confidence} calcolato durante l'auto-critica. Attualmente è reso
-visibile nell'output diagnostico (log ``\texttt{RepairSpec} ready (confidence: X.XX)''); in evoluzioni future potrebbe
-modulare la Fase 3, ad esempio aumentando il budget di campionamento per specifiche a bassa confidenza
-(\texttt{confidence < 0.3}) o attivando modalità di repair differenziate (più conservative quando la fiducia è bassa).
+Il valore \texttt{spec.confidence} calcolato durante l'auto-critica non è un semplice dato diagnostico, ma governa
+un meccanismo di salvaguardia all'interno della Fase 2. L'orchestratore \texttt{repair\_bug.py} confronta la
+confidence con una soglia (\texttt{LOW\_CONFIDENCE = 0.4}): se il critico si dichiara poco sicuro
+(\texttt{confidence < 0.4}), la specifica viene \emph{ricostruita una volta} con una temperatura più alta
+(\texttt{0.3} anziché \texttt{0.1}), così da elicitare un ragionamento alternativo; la nuova bozza viene a sua volta
+validata, e tra le due si conserva quella con confidence maggiore. La \texttt{RepairSpec} che giunge al
+\texttt{PatchAgent} è dunque la migliore di al più due tentativi, e il suo punteggio finale viene riportato
+nell'output diagnostico (log ``\texttt{RepairSpec} ready (confidence: X.XX)'').
+
+\subsubsection{In sintesi}
+La Fase 2 trasforma la diagnosi grezza della Fase 1 in un piano di riparazione operativo: l'\textit{Ingredient
+Forge} ancora il modello al vocabolario reale della classe, lo \texttt{SpecBuilder} forza un ragionamento
+Chain-of-Thought prima del codice, e lo \texttt{SpecCritic} ne valida la coerenza contro le prove empiriche. Il
+risultato è una \texttt{RepairSpec} validata, affiancata dagli \texttt{Ingredients}: insieme offrono al
+\texttt{PatchAgent} della Fase 3 un duplice binario di guida, direzione semantica e contenimento sintattico,
+su cui generare e verificare la patch.
 
