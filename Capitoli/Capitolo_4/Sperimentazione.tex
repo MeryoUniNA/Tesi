@@ -1,4 +1,3 @@
-
 \section{Obiettivi}
 
 L'obiettivo principale è quello misurare in modo rigoroso la capacità del sistema di 
@@ -478,6 +477,7 @@ una comprensione degli invarianti del codice: non è sufficiente minimizzare le 
 modificate se non si preservano le operazioni con effetti collaterali.
 
 \subsection{Direzioni di miglioramento}
+\label{subsec:direzioni-miglioramento}
 
 %L'analisi dei casi problematici suggerisce alcune direzioni concrete per una successiva
 %iterazione del sistema. I due casi intercettati dal validatore semantico (Csv-9, Csv-11)
@@ -492,6 +492,21 @@ modificate se non si preservano le operazioni con effetti collaterali.
 %con un'analisi statica delle chiamate rimosse rispetto al codice originale, in modo da
 %segnalare la rimozione di chiamate con effetti collaterali come potenziale regressione,
 %anche quando la patch supera la suite di test.
+
+Sul fronte della validazione, il margine di miglioramento più rilevante riguarda il meccanismo di
+auto-critica dello \texttt{SpecCritic} che, usando lo stesso modello base come generatore e valutatore, è
+soggetto a un bias di conferma speculare (cfr. Sezione~\ref{subsubsec:limite-selfcritique}). Per spezzarlo, la
+validazione necessita di un orizzonte di verifica esterno e indipendente, lungo tre direttrici complementari. La
+prima è un paradigma di \textbf{Multi-Agent Debate} (o valutazione Cross-Model) \cite{du2023improving}: delegando
+il ruolo di critico a un modello di una famiglia concorrente (es. Claude o Gemini), si sfrutta l'eterogeneità di
+dati di pre-training e architettura affinché i \textit{blind-spot} del generatore non coincidano con quelli del
+validatore. La seconda è l'adozione di un \textbf{Process Reward Model (PRM)} \cite{lightman2023lets}, un modello
+specializzato tramite fine-tuning esclusivamente per la verifica rigorosa di ogni singolo step logico della
+\texttt{Chain-of-Thought}, anziché per la generazione di codice. La terza ancora la critica a oracoli automatici
+deterministici (\textit{execution-based feedback}) \cite{shinn2023reflexion}: \textit{type checker} che
+intercettano a tempo di compilazione le allucinazioni del modello (es. variabili non dichiarate) e
+\textit{model checker} formali capaci di dimostrare l'assenza di stati di stallo (\textit{deadlock}) nel flusso
+di esecuzione.
 
 Sul fronte della fault localization, i 15 fallimenti di RQ1 si concentrano su bug con
 catene causali complesse o dipendenze inter-procedurali profonde

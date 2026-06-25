@@ -19,7 +19,7 @@ classe di fallimento tipica dei sistemi APR basati su LLM.
 La Tabella~\ref{tab:sintesi_fase_2} riepiloga i tre livelli della Fase~2, associando a
 ciascun modulo il meccanismo tecnico adottato e la problematica che esso affronta.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \begin{tabularx}{\textwidth}{ll >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
 \toprule
@@ -38,7 +38,7 @@ In modo analogo, la Tabella~\ref{tab:sintesi_fase3} riassume i quattro contribut
 che compongono la Fase~3, dalla Macchina a Stati Finiti che struttura il processo fino al
 sandbox deterministico che ne certifica l'esito.
 
-\begin{table}[htbp]
+\begin{table}[H]
 \centering
 \begin{tabular}{>{\raggedright\arraybackslash}p{2.8cm} >{\raggedright\arraybackslash}p{4.6cm} >{\raggedright\arraybackslash}p{4.2cm} >{\raggedright\arraybackslash}p{3.4cm}}
 \toprule
@@ -90,6 +90,7 @@ del \texttt{CoT} è strettamente vincolata al rapporto segnale-rumore del prompt
 appieno solo in presenza di diagnosi \texttt{LogicFL} di elevata qualità.
 
 \subsubsection{Il limite del self-critique}
+\label{subsubsec:limite-selfcritique}
 Il secondo limite riguarda il meccanismo di auto-critica. Il modulo \texttt{spec\_critic.py},
 pur mitigando le allucinazioni più palesi, soffre di un bias cognitivo sistematico ben
 documentato nella letteratura inerente alla \textit{self-evaluation} dei Large Language Models
@@ -105,24 +106,8 @@ alta probabilità a validare tale ragionamento fallace, assegnandogli un elevato
 confidenza. Questo fenomeno, definito \textit{echo chamber effect} dell'auto-valutazione
 \cite{panickssery2024llm}, si innesca perché il modello validatore riconosce e premia il
 pattern deduttivo che esso stesso avrebbe generato.
-
-Per spezzare questo bias di conferma speculare, la validazione necessita di un orizzonte di
-verifica esterno e strutturalmente indipendente. Le soluzioni prospettate per le iterazioni
-future dell'architettura si diramano lungo tre direttrici complementari. La prima prevede
-l'adozione di un paradigma di \textbf{Multi-Agent Debate} (o valutazione Cross-Model)
-\cite{du2023improving}: delegando il ruolo di critico a un modello linguistico di una famiglia
-concorrente (es. Claude o Gemini), si sfrutta l'eterogeneità dei dati di pre-training e
-dell'architettura per garantire che i \textit{blind-spot} del generatore non coincidano con
-quelli del validatore. La seconda direttrice esplora l'adozione di un \textbf{Process Reward
-Model (PRM)} \cite{lightman2023lets}, ovvero un modello specializzato tramite fine-tuning (una
-tecnica di addestramento secondario che ricalibra i pesi di un modello pre-esistente esponendolo
-a un set di dati mirato) esclusivamente per la verifica rigorosa di ogni singolo step logico
-della \texttt{Chain-of-Thought}, piuttosto che per la generazione di codice. Infine, la
-strategia definitiva per eradicare le allucinazioni linguistiche consiste nell'ancorare la
-critica a oracoli automatici deterministici (\textit{execution-based feedback})
-\cite{shinn2023reflexion}, come l'impiego di \textit{type checker} deputati a validare la
-correttezza sintattica e semantica del codice Java. Tali strumenti intercettano a tempo di
-compilazione eventuali allucinazioni del modello (ad esempio, l'introduzione di variabili non
-dichiarate), interrompendo immediatamente la pipeline. Parallelamente, l'utilizzo di
-\textit{model checker} formali fornisce un'analisi matematica avanzata in grado di dimostrare
-rigorosamente l'assenza di stati di stallo (\textit{deadlock}) all'interno del flusso di esecuzione.
+\enlargethispage{10pt}
+Per spezzare questo bias di conferma speculare, la validazione necessiterebbe di un orizzonte di
+verifica esterno e strutturalmente indipendente: le possibili contromisure --- validazione
+\textit{cross-model}, \textit{Process Reward Model} e feedback esecutivo da oracoli deterministici ---
+sono discusse tra le direzioni di miglioramento (Sezione~\ref{subsec:direzioni-miglioramento}).

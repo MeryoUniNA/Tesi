@@ -9,9 +9,9 @@ garantisca accuratezza della modifica e validità formale dell'artefatto. \textt
 manipolazione diretta del \textit{Concrete Syntax Tree} tramite Tree-sitter, distaccandosi dai paradigmi testuali classici.
 \subsubsection{I Limiti Fondamentali degli Approcci Testuali}
 \label{subsubsec:3.4.5.1}
-Prima di esplorare le specificità tecniche di Tree-sitter,è imperativo 
-analizzare criticamente le ragioni per cuigli approcci tradizionali, 
-manipolazione tramite espressioni regolari(regex), diff unificati e operatori di mutazione, 
+Prima di esplorare le specificità tecniche di Tree-sitter, è imperativo
+analizzare criticamente le ragioni per cui gli approcci tradizionali,
+manipolazione tramite espressioni regolari (regex), diff unificati e operatori di mutazione,
 risultano inadeguati per un sistema APR di alta affidabilità.
 
 \paragraph{Il fallimento delle espressioni regolari e il problema del bilanciamento}\mbox{}\\
@@ -20,7 +20,7 @@ ricorsiva del codice Java: un metodo non è una sequenza lineare ma una struttur
 \texttt{try/catch}, classi anonime, lambda), in cui ogni livello introduce parentesi graffe da bilanciare. Per la
 teoria dei linguaggi formali, il bilanciamento delle parentesi appartiene ai linguaggi \textit{context-free},
 mentre le regex descrivono solo linguaggi regolari \cite{aho2006compilers}: una regex semplice cattura solo metodi
-piatti, fallendo al primo blocco annidato. La prima iterazione (v1) di \texttt{HybridRepair} tentava di arginare il
+piatti, fallendo al primo blocco annidato. La prima versione di \texttt{HybridRepair} tentava di arginare il
 problema combinando regex e contatori manuali di graffe (\texttt{\_count\_braces()}), ma ciò scatenava il
 ``problema P1'': patch con parentesi sbilanciate o dichiarazioni frammentate, con un alto tasso di scarto.
 
@@ -46,32 +46,10 @@ Per superare queste fragilità, \texttt{HybridRepair} adotta Tree-sitter, una li
 open-source sviluppata da GitHub. A differenza dei parser dei compilatori Java (ECJ, \texttt{javac}), Tree-sitter è
 guidato da una grammatica GLR (\textit{Generalized Left-to-Right Rightmost}). Il suo vantaggio è la resilienza:
 mentre i parser LL(k)/LR(k) interrompono l'analisi al primo errore sintattico distruggendo l'albero parziale,
-Tree-sitter incapsula le anomalie in nodi \texttt{ERROR} e completa comunque il parsing dell'intero documento ---
+Tree-sitter incapsula le anomalie in nodi \texttt{ERROR} e completa comunque il parsing dell'intero documento,
 capacità critica nell'APR, dove il sorgente è per definizione difettoso. L'integrazione della libreria nativa C
-nell'ecosistema Python usa un pattern \textit{singleton lazy} per la gestione delle risorse:
-
-\begin{lstlisting}[language=Python, label={lst:ensure_tree_sitter}]
-def _ensure_tree_sitter():
-    """Inizializzazione lazy del parser Tree-sitter come singleton."""
-    global _TS_AVAILABLE, _JAVA_LANGUAGE, _PARSER
-    
-    if not _TS_AVAILABLE:
-        from tree_sitter import Language, Parser
-        import tree_sitter_java
-        
-        # Caricamento della grammatica compilata nativa
-        _JAVA_LANGUAGE = Language(tree_sitter_java.language(), 'java')
-        _PARSER = Parser()
-        _PARSER.set_language(_JAVA_LANGUAGE)
-        _TS_AVAILABLE = True
-        
-    return _PARSER
-\end{lstlisting}
-
-Il pattern \textit{lazy singleton} interviene su un collo di bottiglia: l'inizializzazione di Tree-sitter
-(caricamento della grammatica pre-compilata via binding C) costa decine di millisecondi, mentre il parsing di un
-file ne richiede pochi. Ritardando l'istanza al primo utilizzo e condividendo l'oggetto globale \texttt{\_PARSER},
-il sistema evita ritardi latenti durante l'esecuzione batch.
+nell'ecosistema Python è gestita con un pattern \textit{lazy singleton}, dettagliato nella
+Sezione~\ref{subsubsec:3.4.6.1}.
 
 \subsubsection{La Distinzione Cruciale: AST del Compilatore vs CST di Tree-sitter}
 \label{subsubsec:3.4.5.3}
@@ -117,6 +95,7 @@ quelli che forniscono i confini delle macro-strutture del codice, riassunti nell
 
 \begin{table}[H]
 \centering
+\caption{Principali tipi di nodo della grammatica \texttt{tree-sitter-java} usati da \texttt{HybridRepair}.}
 \label{tab:treesitter_nodes}
 \resizebox{\textwidth}{!}{
 \begin{tabular}{l l l}
@@ -136,41 +115,11 @@ quelli che forniscono i confini delle macro-strutture del codice, riassunti nell
 }
 \end{table}
 
-A titolo illustrativo, il seguente frammento mostra l'ispezione iterativa (DFS) impiegata da
-\texttt{ast\_applier.py} per localizzare il nodo di un metodo target:
-
-\begin{lstlisting}[language=Python, label={lst:find_method_by_name_intro}]
-def _find_method_by_name(root_node, target_name):
-    """Ricerca iterativa DFS del metodo target all'interno del CST."""
-    stack = [root_node]
-    
-    while stack:
-        node = stack.pop()
-        
-        # Intercettazione dichiarazioni di metodo o costruttore
-        if node.type in ['method_declaration', 'constructor_declaration']:
-            # Estrazione sicura del figlio denominato 'name'
-            name_node = node.child_by_field_name('name')
-            if name_node and name_node.text.decode('utf8') == target_name:
-                return node
-                
-        # Aggiunta iterativa dei figli (in ordine decrescente 
-        # per emulare una corretta visita left-to-right)
-        for child in reversed(node.children):
-            stack.append(child)
-            
-    return None
-\end{lstlisting}
-
-In questo breve passaggio algoritmico, il sistema naviga
-fluidamente la gerarchia del CST, ispezionando unicamente i
-nodi del tipo \texttt{method\_declaration} e \texttt{constructor\_dec\\laration} estratti dal
-vocabolario, estraendo dal campo nominativo \texttt{name} (che corrisponde
-all'\texttt{identifier} del metodo) il testo per il confronto
-e ottenendo, infine, il nodo risolto portatore dei
-corretti \textit{byte offset} su cui l'agente applicherà la
-propria manipolazione strutturale.
-\newpage
+A partire da questo vocabolario, la localizzazione del nodo del metodo target nel CST è affidata a una visita
+\textit{Depth-First Search} sui soli nodi \texttt{method\_declaration} e \texttt{constructor\_declaration}: il
+confronto avviene sul campo \texttt{name} (l'\texttt{identifier} del metodo) e restituisce il nodo portatore dei
+\textit{byte offset} su cui agire. L'algoritmo completo, comprensivo della disambiguazione degli overload, è
+dettagliato nella Sezione~\ref{subsubsec:3.4.6.4}.
 \subsection{Precisione Chirurgica e Modifiche Posizionali}
 \label{subsec:3.4.6}
 Il modulo \texttt{patch\_agent/ast\_applier.py} implementa il meccanismo centrale della riparazione strutturale. La
@@ -180,31 +129,38 @@ del relativo span di testo.
 
 \subsubsection{L'Inizializzazione Lazy del Parser: \texttt{\_ensure\_tree\_sitter()}}
 \label{subsubsec:3.4.6.1}
-Il primo passo è l'istanza del parser tramite \texttt{\_ensure\_tree\_sitter()}, già descritta. La funzione è
-condivisa tra \texttt{ast\_applier.py} (riparazione) e \texttt{prolog\_grounding.py} (risoluzione dei tipi nel
-\textit{grounding}): grazie al sistema di import di Python, le variabili globali del modulo sono caricate una sola
-volta per processo, garantendo un'istanza unica e condivisa del parser tra tutti gli importatori.
+Il primo passo è l'istanza del parser, gestita con il pattern \textit{lazy singleton}:
+
+\begin{lstlisting}[language=Python, label={lst:ensure_tree_sitter}]
+def _ensure_tree_sitter():
+    """Inizializzazione lazy del parser Tree-sitter come singleton."""
+    global _TS_AVAILABLE, _JAVA_LANGUAGE, _PARSER
+
+    if not _TS_AVAILABLE:
+        from tree_sitter import Language, Parser
+        import tree_sitter_java
+
+        # Caricamento della grammatica compilata nativa
+        _JAVA_LANGUAGE = Language(tree_sitter_java.language(), 'java')
+        _PARSER = Parser()
+        _PARSER.set_language(_JAVA_LANGUAGE)
+        _TS_AVAILABLE = True
+
+    return _PARSER
+\end{lstlisting}
+
+Il pattern interviene su un collo di bottiglia: l'inizializzazione di Tree-sitter (caricamento della grammatica
+pre-compilata via binding C) costa decine di millisecondi, mentre il parsing di un file ne richiede pochi.
+Ritardando l'istanza al primo utilizzo e condividendo l'oggetto globale \texttt{\_PARSER}, il sistema evita ritardi
+latenti durante l'esecuzione batch. La funzione è inoltre condivisa tra \texttt{ast\_applier.py} (riparazione) e
+\texttt{prolog\_grounding.py} (risoluzione dei tipi nel \textit{grounding}): grazie al sistema di import di Python,
+le variabili globali del modulo sono caricate una sola volta per processo, garantendo un'istanza unica tra tutti
+gli importatori.
 
 \subsubsection{La Funzione di Parsing: \texttt{\_parse\_java()}}
 \label{subsubsec:3.4.6.2}
-Ottenuto il parser, il sorgente è analizzato per generare il CST dalla funzione \texttt{\_parse\_java()}, che
-introduce un passaggio di codifica fondamentale:
-
-\begin{lstlisting}[language=Python, label={lst:parse_java}]
-def _parse_java(source_code: str):
-    """Esegue il parsing del codice sorgente gestendo rigorosamente i byte."""
-    parser = _ensure_tree_sitter()
-    
-    # Passaggio critico: codifica in bytes UTF-8
-    source_bytes = source_code.encode('utf-8')
-    
-    # Generazione dell'albero sintattico
-    tree = parser.parse(source_bytes)
-    
-    return tree, source_bytes
-\end{lstlisting}
-
-Il dettaglio critico è la conversione esplicita della stringa Python in byte UTF-8
+Ottenuto il parser, il sorgente è analizzato dalla funzione \texttt{\_parse\_java()} per generare il CST. Il
+dettaglio critico è la conversione esplicita della stringa Python in byte UTF-8
 (\texttt{source\_code.encode('utf-8')}) prima di \texttt{parser.parse()}: Tree-sitter opera nello spazio dei byte,
 e gli offset \texttt{start\_byte}/\texttt{end\_byte} sono offset in byte, non in caratteri Unicode. Per file ASCII i
 due coincidono, ma in presenza di stringhe o commenti non-ASCII (frequenti nei progetti internazionali di
@@ -243,7 +199,7 @@ Poiché gli attributi \texttt{start\_byte}/\texttt{end\_byte} delineano in modo 
 deriva una correttezza sintattica per costruzione: se il file originale è valido, \texttt{new\_body\_indented} è un
 metodo valido con il medesimo identificatore e \texttt{method\_node} ne inquadra le coordinate, allora
 \texttt{patched\_bytes} è garantito sintatticamente integro. A differenza degli approcci testuali, la correttezza
-non è una scommessa statistica ma una conseguenza della manipolazione posizionale. Eventuali errori semantici
+non è una scommessa statistica ma una conseguenza della manipolazione posizionale. Eventuali errori
 residui saranno intercettati dal compilatore nella fase \texttt{COMPILE}.
 
 \subsubsection{Il Rilevamento del Metodo Target: \texttt{\_find\_method\_by\_name()}}
@@ -274,8 +230,8 @@ def _find_method_by_name(root_node, target_name: str, target_line: int = None):
     if target_line is not None and len(candidate_nodes) > 1:
         for node in candidate_nodes:
             # Tree-sitter restituisce righe zero-indexed, aggiungiamo 1
-            start_row = node.start_point + 1
-            end_row = node.end_point + 1
+            start_row = node.start_point[0] + 1
+            end_row = node.end_point[0] + 1
             
             # Verifica se la linea difettosa ricade nei confini del metodo
             if start_row <= target_line <= end_row:
@@ -294,7 +250,7 @@ classi come \texttt{DatasetUtilities} (JFreeChart) o \texttt{StringUtils} (Apach
 di metodi omonimi con firme diverse: cercare per solo nome (più nodi in \texttt{candidate\_nodes}) applicherebbe la
 patch al primo a caso. Ricevendo la \texttt{target\_line} (propagata dal \texttt{PatchAgent} a partire da
 \texttt{FaultLocation}), l'algoritmo confronta la coordinata con il \textit{bounding box} di ogni candidato
-(\texttt{start\_point}/\texttt{end\_point}) e seleziona solo il nodo che abbraccia la riga difettosa, risolvendo l'ambiguità.
+(\texttt{start\_point}/\texttt{end\_p\\oint}) e seleziona solo il nodo che abbraccia la riga difettosa, risolvendo l'ambiguità.
 
 \subsubsection{La Preservazione dell'Indentazione: \texttt{\_detect\_indentation()} e \texttt{\_reindent()}}
 \label{subsubsec:3.4.6.5}
@@ -304,15 +260,6 @@ spazi bianchi anziché solo quelle realmente alterate, rendendo la patch diffici
 rischio di errori legati al whitespace in pipeline CI con regole di stile stringenti (Checkstyle). Il sistema usa
 due funzioni dedicate: \texttt{\_detect\_indentation()} per campionare lo stile originario e \texttt{\_reindent()}
 per applicarlo al codice generato.
-
-\begin{lstlisting}[language=Python, label={lst:detect_indentation}]
-def _detect_indentation(source_code: str) -> str:
-    """Rileva l'indentazione del prefisso della prima riga utile."""
-    first_line = source_code.split('\n')[0]
-    # Estrazione del prefisso composto esclusivamente da spazi o tab
-    indentation_len = len(first_line) - len(first_line.lstrip())
-    return first_line[:indentation_len]
-\end{lstlisting}
 
 La funzione \texttt{\_detect\_indentation()} estrae il prefisso (spazi o tabulazioni) della prima riga del metodo
 originale. Nel dataset Defects4J le convenzioni variano molto (JFreeChart usa 4 spazi, alcuni sottoprogetti Apache
@@ -358,39 +305,20 @@ verticali di separazione logica.
 
 \subsubsection{Il Calcolo del Diff Unificato}
 \label{subsubsec:3.4.6.6}
-Sebbene il sistema abbia definitivamente abbandonato i diff come
-veicolo per applicare la modifica, il formato \textit{unidiff} mantiene
-un ruolo di primaria importanza a livello diagnostico.
-
-\begin{lstlisting}[language=Python, label={lst:compute_diff}]
-def _compute_diff(original: str, patched: str, filename: str) -> str:
-    """Genera un diff unificato diagnostico post-applicazione."""
-    import difflib
-    
-    original_lines = original.splitlines(keepends=True)
-    patched_lines = patched.splitlines(keepends=True)
-    
-    # Parametro n=3 per rispettare lo standard delle righe di contesto
-    diff = difflib.unified_diff(
-        original_lines, patched_lines,
-        fromfile=filename, tofile=filename, n=3
-    )
-    return "".join(diff)
-\end{lstlisting}
-
-La funzione \texttt{\_compute\_diff()} è invocata solo dopo l'applicazione via Tree-sitter e ha valore puramente
-diagnostico: il risultato non altera mai il file, ma è restituito all'agente come feedback di conferma
-(\texttt{"[SUCCESS] Patch applied ... Diff: ..."}) per validare visivamente l'impatto. Il parametro \texttt{n=3}
-ricalca la convenzione di \texttt{git diff} per le righe di contesto: valori superiori sarebbero più leggibili ma
+Sebbene il sistema abbia definitivamente abbandonato i diff come veicolo per applicare la modifica, il formato
+\textit{unidiff} mantiene un ruolo di primaria importanza a livello diagnostico. La funzione \texttt{\_compute\_diff()}
+(un wrapper su \texttt{difflib.unified\_diff}) è invocata solo \emph{dopo} l'applicazione via Tree-sitter e ha valore
+puramente diagnostico: il risultato non altera mai il file, ma è restituito all'agente come feedback di conferma
+(\texttt{"[SUCCESS] Patch applied ... Diff: ..."}) per validare visivamente l'impatto. Le righe di contesto sono
+fissate a \texttt{n=3} come nella convenzione di \texttt{git diff}: valori superiori sarebbero più leggibili ma
 consumerebbero inutilmente il \textit{token budget}.
-
+\clearpage
 \subsubsection{La Strategia di Fallback Graduale}
 \label{subsubsec:3.4.6.7}
 L'orchestrazione finale è nel metodo \texttt{apply\_method\_replacement()}, che integra parsing, indentazione,
 manipolazione dell'AST e generazione del diff in un'unica interfaccia. Per la massima resilienza, implementa una
 strategia di fallback graduale a due livelli:
 
-\newpage
 \begin{lstlisting}[language=Python, label={lst:apply_method_replacement}]
 def apply_method_replacement(file_path: Path, method_name: str, new_body: str, target_line: int = None) -> tuple[bool, str]:
     """Applica la sostituzione del metodo tramite una strategia di fallback graduale."""
@@ -443,6 +371,32 @@ un'eccezione che farebbe crashare l'agente, il sistema restituisce una tupla di 
 contesto dell'LLM, che nel round successivo può tentare un approccio diverso. Questa \textit{graceful degradation}
 è imprescindibile per un sistema APR che processa batch massivi di bug eterogenei.
 
+\subsubsection{La Riparazione Strutturale all'Opera: Csv-4}
+\label{subsubsec:3.4.6.8}
+Concretizzando il meccanismo su Csv-4: quando l'agente emette la tool-call \texttt{apply\_ast\\\_patch} per
+\texttt{getHeaderMap} (cfr. Sezione~\ref{sec:fase3}), \texttt{apply\_method\_replacement()} entra nel livello
+primario. \texttt{\_find\_method\_by\_name()} percorre il CST e individua l'unico nodo
+\texttt{method\_declaration} di nome \texttt{getHeaderMap} (senza overload, la \texttt{target\_line} non serve);
+\texttt{\_detect\_indentation()} rileva i 4 spazi dello stile di \texttt{CSVParser.java} e \texttt{\_reindent()}
+vi allinea il nuovo corpo; infine \texttt{\_replace\_via\_ast()} sostituisce lo slice
+\texttt{source[node.start\_byte:node.end\_byte]} con il metodo re-indentato. Il \texttt{\_compute\_di\\ff()}
+restituito all'agente è un \textit{single-hunk} pulito:
+
+\begin{lstlisting}[label={lst:csv4_structural_diff}]
+--- a/org/apache/commons/csv/CSVParser.java
++++ b/org/apache/commons/csv/CSVParser.java
+@@ -285,7 +285,7 @@
+     public Map<String, Integer> getHeaderMap() {
+-        return new LinkedHashMap<String, Integer>(this.headerMap);
++        return this.headerMap == null ? null : new LinkedHashMap<>(this.headerMap);
+     }
+\end{lstlisting}
+
+\noindent Il fatto che il diff tocchi una sola riga, e non l'intero metodo, è la prova empirica
+dell'efficacia della preservazione dell'indentazione: senza il \texttt{\_reindent()} relativo, ogni riga del
+metodo risulterebbe modificata per sole discrepanze di spazi bianchi.
+
+\clearpage
 \subsection{Il Sandbox di Valutazione: \texttt{sandbox\_evaluator.py}}
 \label{subsec:3.4.7}
 Il modulo \texttt{services/sandbox\_evaluator.py} implementa il sandbox di valutazione, l'ambiente isolato che
@@ -460,34 +414,34 @@ Prima di compilare o eseguire il codice, l'ambiente deve risolvere le dipendenze
 \begin{lstlisting}[language=Python, label={lst:read_classpath}]
 def _read_classpath(bug_dir: Path) -> str:
     """Estrae e risolve il classpath dal file config.properties."""
-    config_path = bug_dir / "config.properties"
-    
-    # Estrazione della riga contenente class.path
-    with open(config_path, 'r') as f:
-        for line in f:
-            if line.startswith("class.path="):
-                raw_paths = line.strip().split("=")[3].split(":")
-                break
-                
+    props_path = bug_dir / "config.properties"
+
+    # config.properties non ha un'intestazione di sezione: la si inietta
+    # per poterlo dare in pasto a configparser
+    raw = "[DEFAULT]\n" + props_path.read_text(encoding="utf-8")
+    parser = configparser.RawConfigParser()
+    parser.read_string(raw)
+    cp_raw = parser.get("DEFAULT", "class.path", fallback="")
+
     resolved_entries = []
-    for entry in raw_paths:
-        if '*' in entry:
-            # Meccanismo di glob expansion per le wildcard
-            base_dir = (bug_dir / entry).parent
-            for jar_file in base_dir.glob("*.jar"):
-                resolved_entries.append(str(jar_file.resolve()))
+    for entry in cp_raw.split(":"):
+        resolved = (bug_dir / entry.strip()).resolve()
+        if '*' in str(resolved):
+            # Glob expansion per le wildcard (es. ../../lib/*)
+            resolved_entries += [str(j) for j in resolved.parent.glob("*.jar")]
         else:
             # Risoluzione in percorso assoluto
-            resolved_entries.append(str((bug_dir / entry).resolve()))
-            
+            resolved_entries.append(str(resolved))
+
     return ":".join(resolved_entries)
 \end{lstlisting}
 
 Il file definisce il classpath con percorsi relativi alla directory del bug (es.
-\texttt{class.path=../../lib/junit-4.11.jar:...}); la funzione li ancora in percorsi assoluti tramite
-\texttt{(bug\_dir / entry).resolve()}. Aspetto chiave è il supporto alla \textit{glob expansion}: alcuni progetti
-usano wildcard (es. \texttt{../../lib/*}) anziché elencare ogni JAR; il codice rileva il carattere \texttt{*} e usa
-la libreria \texttt{glob} per raccogliere dinamicamente tutti i \texttt{.jar} della directory, assorbendo le
+\texttt{class.path=.\\./../lib/junit-4.11.jar:...}); poiché \texttt{config.properties} non possiede un'intestazione di
+sezione, si antepone \texttt{[DEFAULT]} per poterlo analizzare con \texttt{configparser}, quindi ogni voce è ancorata
+in percorso assoluto tramite \texttt{(bug\_dir / entry).resolve()}. Aspetto chiave è il supporto alla
+\textit{glob expansion}: alcuni progetti usano wildcard (es. \texttt{../../lib/*}) anziché elencare ogni JAR; il
+codice rileva il carattere \texttt{*} e raccoglie dinamicamente tutti i \texttt{.jar} della directory, assorbendo le
 differenze strutturali tra i repository di Defects4J.
 
 \subsubsection{La Compilazione Selettiva dei File Modificati}
@@ -537,32 +491,17 @@ assignments) che altrimenti inquinerebbero il prompt dell'agente, mantenendolo f
 \newpage
 \subsubsection{L'Esecuzione JUnit e il Parsing dell'Output}
 \label{subsubsec:3.4.7.3}
-L'oracolo semantico finale è il collaudo della suite di test. Operando in totale automazione, i test sono
-innescati invocando \texttt{org.junit.runner.JUnitCore} in modalità \textit{command-line}:
-
-\begin{lstlisting}[language=Python,  label={lst:run_junit}]
-def _run_junit(patched_dir: Path, classpath: str, test_classes: list[str]):
-    """Esegue la suite JUnit in modalità command-line con limite temporale."""
-    import subprocess
-    
-    cmd = [
-        "java", 
-        "-cp", classpath, 
-        "org.junit.runner.JUnitCore"
-    ] + test_classes
-    
-    # Timeout di 300 secondi per prevenire stalli
-    return subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-\end{lstlisting}
-
-Il parametro \texttt{timeout=300} è uno scudo contro un fenomeno tipico dell'APR: le modifiche dell'agente, specie
+L'oracolo finale è il collaudo della suite di test, innescato in totale automazione invocando
+\texttt{org.junit.runner.JUnitCore} in modalità \textit{command-line}
+(\texttt{java -cp <classpath> org.junit.runner.JUnitCore <test\_classes>}) entro un \texttt{timeout} di 300 secondi.
+Quest'ultimo è uno scudo contro un fenomeno tipico dell'APR: le modifiche dell'agente, specie
 su bug di sincronizzazione multithreading o I/O, possono generare deadlock o loop infiniti nei test. Un limite di
 5 minuti previene il blocco indefinito dell'elaborazione batch.
 
 Il runner JUnit in CLI non restituisce un log strutturato (XML), ma riversa sullo standard output un report
 testuale grezzo, analizzato dalla funzione \texttt{\_parse\_junit\_output()}:
 
-\begin{lstlisting}[language=Python , label={lst:parse_junit_output}]
+\begin{lstlisting}[language=Python, label={lst:parse_junit_output}]
 def _parse_junit_output(output: str, original_failing_tests: set):
     """Analizza l'output testuale JUnit ed estrae le metriche di progresso."""
     import re
@@ -596,8 +535,8 @@ direzionale di progresso, segnalando all'agente che la rotta è parzialmente val
 
 \subsection{Strutture Dati della Fase 3: \texttt{PatchAttempt} e \texttt{RepairResult}}
 \label{subsec:3.4.8}
-Il contratto di output della Fase 3 è formalizzato in due \texttt{@dataclass} immutabili definite in
-\texttt{shared/models.py}, progettate non come semplici registri di esito ma come archivi permanenti:
+Il contratto di output della Fase 3 è formalizzato in due \texttt{@dataclass} definite in
+\texttt{shared/\\models.py}, progettate non come semplici registri di esito ma come archivi permanenti:
 
 \begin{lstlisting}[language=Python, label={lst:models_patch_repair}]
 from dataclasses import dataclass, field
@@ -634,28 +573,96 @@ La struttura \texttt{PatchAttempt} abilita una completa tracciabilità post-hoc.
 \texttt{agent\_messages}, che incapsula l'intera storia conversazionale del tentativo: prompt di sistema,
 invocazioni agli strumenti (con \texttt{tool\_call\_id}), diff diagnostici, output del compilatore e fallimenti
 JUnit. Questa granularità permette di ricostruire passo dopo passo la catena decisionale del modello, strumento
-prezioso per il debugging algoritmico.
+prezioso per il debugging.
 
 A un livello superiore, \texttt{RepairResult} è l'artefatto conclusivo aggregato della pipeline a tre fasi:
 raccoglie la lista dei \texttt{PatchAttempt} e ingloba il \texttt{FaultReport} (Fase 1) e la \texttt{RepairSpec}
 (Fase 2), unificando diagnosi, specifica e risoluzione. Il metodo \texttt{summary()} emette una riga di testo
 essenziale per il monitoraggio a terminale durante l'esecuzione batch (\texttt{run\_all\_bugs.py}).
 
-Al termine, la persistenza è delegata a \texttt{services/reporter.py}, che serializza \texttt{RepairResult} in JSON
+Al termine, la persistenza è delegata a \texttt{services/reporter.py}, che serializza \texttt{RepairRe\\sult} in JSON
 nel file \texttt{final\_report.json} sotto \texttt{pipeline\_results/<bug\_id>/}. Questo archivio permanente fornisce
 il dataset grezzo per le successive analisi statistiche di efficacia e i confronti con altri sistemi APR.
 
 \subsection{Il Flusso Completo: dalla \texttt{RepairSpec} al \texttt{RepairResult}}
 \label{subsec:3.4.9}
 Per sintetizzare l'orchestrazione tecnica delineata, si traccia l'intero viaggio dei dati nel \texttt{PatchAgent},
-che unisce inferenza neurale e oracoli deterministici in tre passaggi.
+che unisce inferenza neurale e oracoli deterministici in tre passaggi. La Figura~\ref{fig:sequence_fase3} ne
+illustra l'interazione tra i moduli coinvolti.
 
-\paragraph{Passo 1 --- Inizializzazione del Contesto Strategico}
-Nel costruttore \texttt{PatchAgent.\_\_init\_\_()} l'agente riceve il trittico di artefatti (\texttt{FaultReport},
+\begin{figure}[H]
+    \centering
+    \resizebox{\textwidth}{!}{
+    \begin{tikzpicture}[
+        >=stealth,
+        lifeline/.style={rectangle, draw, thick, fill=blue!5, align=center,
+                         minimum width=2.8cm, minimum height=0.8cm, font=\footnotesize\bfseries},
+        msg/.style={-stealth, thick},
+        ret/.style={-stealth, thick, dashed},
+        lbl/.style={font=\scriptsize, midway, above, align=center},
+        passo/.style={font=\footnotesize\bfseries, anchor=east},
+        note/.style={rectangle, draw=gray, dashed, rounded corners, fill=gray!8,
+                     align=center, font=\scriptsize\itshape}
+    ]
+        % Header delle lifeline
+        \node[lifeline] (O) at (0,0)    {\texttt{repair\_bug.py}\\(orchestratore)};
+        \node[lifeline] (P) at (6,0)    {\texttt{PatchAgent}};
+        \node[lifeline] (A) at (12,0)   {\texttt{AzureClient}\\+ Tools};
+        \node[lifeline] (S) at (16.5,0) {Sandbox\\(\texttt{javac}/JUnit)};
+
+        % Lifeline verticali
+        \draw[dashed, gray] (0,-0.45)    -- (0,-13.6);
+        \draw[dashed, gray] (6,-0.45)    -- (6,-13.6);
+        \draw[dashed, gray] (12,-0.45)   -- (12,-13.6);
+        \draw[dashed, gray] (16.5,-0.45) -- (16.5,-13.6);
+
+        % --- Passo 1 ---
+        \node[passo] at (-1.6,-1.5) {Passo 1};
+        \draw[msg] (0,-1.2) -- node[lbl]{\texttt{\_\_init\_\_}(FaultReport, RepairSpec, Ingredients)} (6,-1.2);
+        \draw[msg] (0,-2.1) -- node[lbl]{\texttt{run()}} (6,-2.1);
+
+        % --- Passo 2: loop ---
+        \node[passo] at (-1.6,-6.6) {Passo 2};
+        \draw[gray, dashed, rounded corners] (-1.0,-2.7) rectangle (17.6,-10.9);
+        \node[anchor=west, font=\scriptsize\bfseries, fill=white] at (-1.0,-2.7)
+            {\ loop  [k = 1 .. 3 \quad --- \quad temperatura $T_k$ = 0.1, 0.2, 0.4]\ };
+
+        % self-message: copia sandbox + temperatura
+        \draw[msg] (6,-3.3) -- (7.0,-3.3) -- (7.0,-3.7) -- (6,-3.7);
+        \node[anchor=west, font=\scriptsize] at (7.1,-3.5) {\texttt{\_create\_patched\_copy()}, prompt $T_k$};
+
+        \draw[msg] (6,-4.6) -- node[lbl]{\texttt{chat\_with\_tools}()\\round FSM: \texttt{EXPLORE}$\to$\texttt{PATCH}$\to$\texttt{COMPILE}$\to$\texttt{TEST}} (12,-4.6);
+        \draw[msg] (12,-5.6) -- node[lbl]{\texttt{compile\_check} / \texttt{run\_tests}} (16.5,-5.6);
+        \draw[ret] (16.5,-6.3) -- node[lbl]{esiti \texttt{javac}/JUnit} (12,-6.3);
+        \draw[ret] (12,-7.1) -- node[lbl]{messaggio finale (no \texttt{tool\_calls})} (6,-7.1);
+
+        % self-message: persistenza JSONL della conversazione
+        \draw[msg] (6,-7.8) -- (7.0,-7.8) -- (7.0,-8.2) -- (6,-8.2);
+        \node[anchor=west, font=\scriptsize] at (7.1,-8.0) {\texttt{conversation\_store.save()} $\to$ JSONL};
+
+        \draw[msg] (6,-9.0) -- node[lbl]{\texttt{\_verify\_final()}: \texttt{javac} + JUnit} (16.5,-9.0);
+        \draw[ret] (16.5,-9.8) -- node[lbl]{\texttt{TestResult} (PASS / FAIL)} (6,-9.8);
+        \node[note, anchor=west] at (6.3,-10.5)
+            {PASS $\Rightarrow$ \texttt{winning\_attempt}, \texttt{break}\quad|\quad FAIL $\Rightarrow$ memorizza il fallimento, $k{+}1$};
+
+        % --- Passo 3 ---
+        \node[passo] at (-1.6,-11.8) {Passo 3};
+        \draw[ret] (6,-11.6) -- node[lbl]{\texttt{RepairResult}} (0,-11.6);
+        \draw[msg] (0,-12.5) -- (1.0,-12.5) -- (1.0,-12.9) -- (0,-12.9);
+        \node[anchor=west, font=\scriptsize] at (1.1,-12.7) {\texttt{save\_final\_report()} $\to$ \texttt{final\_report.json}};
+    \end{tikzpicture}
+    }
+    \caption{Diagramma di sequenza del flusso completo della Fase 3: il viaggio dei dati dai tre artefatti
+    d'ingresso fino al \texttt{RepairResult} persistito su disco.}
+    \label{fig:sequence_fase3}
+\end{figure}
+
+\paragraph{Passo 1, Inizializzazione del Contesto Strategico}
+Nel costruttore \texttt{PatchAgent.\_\_\\init\_\_()} l'agente riceve il trittico di artefatti (\texttt{FaultReport},
 \texttt{RepairSpec}, \texttt{Ingredients}), istanzia il client \texttt{AzureClient} e pre-alloca un
 \texttt{RepairResult} con \texttt{success=False}.
 
-\paragraph{Passo 2 --- Il Loop della Macchina a Stati Finiti (Max 3 Tentativi)}
+\paragraph{Passo 2, Il Loop della Macchina a Stati Finiti (Max 3 Tentativi)}
 Il cuore operativo concede all'agente un massimo di tre tentativi (\texttt{max\_attempts = 3}). Per ogni tentativo $k$:
 
 \begin{description}
@@ -677,7 +684,7 @@ Il cuore operativo concede all'agente un massimo di tre tentativi (\texttt{max\_
     procede al tentativo successivo con la nuova lezione memorizzata.
 \end{description}
 
-\paragraph{Passo 3 --- Restituzione del \texttt{RepairResult}}
+\paragraph{Passo 3, Restituzione del \texttt{RepairResult}}
 Esauriti i tentativi o conseguito il successo, l'oggetto \texttt{RepairResult}, ricco di diagnosi, diff, messaggi e
 metriche, è restituito all'orchestratore \texttt{repair\_bug.py}, che tramite \texttt{reporter.py} lo persiste su disco,
 sigillando la riparazione e liberando le risorse per il bug successivo.
