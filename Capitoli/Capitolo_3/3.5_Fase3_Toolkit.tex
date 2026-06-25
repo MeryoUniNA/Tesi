@@ -21,12 +21,12 @@ ruolo \texttt{role: "tool"} e il corretto \texttt{tool\_call\_id}. Il metodo \te
 questo protocollo, come illustrato di seguito:
 
 \begin{lstlisting}[language=Python, label={lst:chat_with_tools}]
-def chat_with_tools(self, messages: list, tools: list, max_tool_rounds: int) -> tuple:
+def chat_with_tools(self, messages: list, tools: list, tool_executor, max_tool_rounds: int) -> tuple:
     """Gestisce il loop conversazionale con invocazione automatica dei tool."""
     for _ in range(max_tool_rounds):
         # Chiamata all'API con retry esponenziale
         response = self._call_with_retry(messages, tools)
-        response_message = response.choices.message
+        response_message = response.choices[0].message
         
         # Mutazione in-place della storia conversazionale
         messages.append(response_message)
@@ -45,8 +45,8 @@ def chat_with_tools(self, messages: list, tools: list, max_tool_rounds: int) -> 
                 # Fallback di sicurezza in caso di allucinazione sintattica
                 args = {} 
                 
-            # Esecuzione fisica dello strumento (dispatch)
-            result = self._execute_tool(func_name, args)
+            # Esecuzione fisica dello strumento (dispatch all'executor iniettato)
+            result = tool_executor(func_name, args)
             
             # Mutazione in-place: aggiunta del risultato
             messages.append({
@@ -56,7 +56,7 @@ def chat_with_tools(self, messages: list, tools: list, max_tool_rounds: int) -> 
             })
             
     # Raggiungimento del limite massimo di round
-    return None, messages
+    return "", messages
 \end{lstlisting}
 
 Due aspetti implementativi meritano attenzione:
@@ -64,7 +64,7 @@ Due aspetti implementativi meritano attenzione:
 \begin{description}
     \item[La mutazione \textit{in-place} della lista \texttt{messages}:] la lista è passata per riferimento e
     modificata con \texttt{.append()} a ogni iterazione, così che il chiamante
-    (\texttt{PatchAgent.\_run\_single\_attempt()}) abbia sempre l'intera storia conversazionale sincronizzata, anche
+    (\texttt{PatchAgent.\_r\\un\_single\_attempt()}) abbia sempre l'intera storia conversazionale sincronizzata, anche
     in caso di terminazione prematura. L'oggetto \texttt{updated\_messages} restituito non è una copia, ma la stessa
     istanza mutata.
 
@@ -93,9 +93,9 @@ esponenziale:
 
 \begin{lstlisting}[language=Python, label={lst:call_with_retry}]
 def _call_with_retry(self, messages: list, tools: list):
-    """Esegue la chiamata API gestendo gli errori transitori di rate limit."""
+    """Esegue la chiamata API gestendo gli errori transitori (rate-limit, timeout, connessione)."""
     delays = [2, 4, 8]  # Backoff esponenziale in secondi
-    
+
     for attempt_idx, delay in enumerate(delays):
         try:
             return self.client.chat.completions.create(
@@ -103,7 +103,7 @@ def _call_with_retry(self, messages: list, tools: list):
                 messages=messages,
                 tools=tools
             )
-        except openai.RateLimitError as e:
+        except (openai.RateLimitError, openai.APITimeoutError, openai.APIConnectionError) as e:
             if attempt_idx == len(delays) - 1:
                 # Esauriti i retry, propaga l'eccezione
                 raise e
@@ -111,8 +111,9 @@ def _call_with_retry(self, messages: list, tools: list):
             time.sleep(delay)
 \end{lstlisting}
 
-L'intervallo di attesa crescente (2, 4, 8 secondi) è il protocollo raccomandato per \texttt{RateLimitError}, ed è
-vitale in modalità batch (es. \texttt{run\_all\_bugs.py}). Quando decine di thread paralleli vengono respinti per
+Il wrapper ritenta sui principali errori transitori (rate-limit, timeout e interruzioni di connessione);
+l'intervallo di attesa crescente (2, 4, 8 secondi) è il protocollo raccomandato per il \texttt{RateLimitError}, ed è
+particolarmente vitale in modalità batch (es. \texttt{run\_all\_bugs.py}). Quando decine di thread paralleli vengono respinti per
 rate-limit, un'attesa fissa li farebbe ripresentare in blocco contro i server (\textit{thundering herd}), causando
 un nuovo collasso. Il backoff esponenziale scagliona le ritrasmissioni nel tempo, disperdendo i picchi di carico
 e riducendo la probabilità di reimpattare contro i limiti.
@@ -124,7 +125,6 @@ esposti al modello tramite gli schemi JSON del \textit{Function Calling} e imple
 stato è gestito con il pattern \textit{Context Object}: anziché passare singolarmente percorsi e classi di test a
 ogni funzione, il contesto del tentativo corrente è aggregato in un oggetto mutabile condiviso:
 
-\newpage
 \begin{lstlisting}[language=Python, label={lst:tool_context}]
 @dataclass
 class ToolContext:
@@ -133,7 +133,7 @@ class ToolContext:
     test_classes: list[str]
 \end{lstlisting}
 
-L'iniezione del \texttt{ToolContext} riduce l'accoppiamento tra il dispatcher (\texttt{create\_tool\_executor()})
+L'iniezione del \texttt{ToolContext} riduce l'accoppiamento tra il dispatcher (\texttt{create\_tool\_exe\\cutor()})
 e le singole implementazioni, rendendo il toolkit estensibile: aggiungere strumenti non richiede modifiche alla
 firma di routing.
 
@@ -168,22 +168,7 @@ l'agente a una navigazione più mirata.
 \subsubsection{\texttt{search\_symbol}: Ricerca Testuale nel Source Tree}
 \label{subsubsec:3.4.4.2}
 Quando il file in esame non contiene le risposte necessarie, l'agente può esplorare l'intero albero dei sorgenti
-tramite \texttt{search\_symbol}:
-
-\begin{lstlisting}[language=Python, label={lst:tool_search_symbol}]
-def tool_search_symbol(context: ToolContext, pattern: str) -> str:
-    """Esegue una ricerca testuale ricorsiva nel progetto target."""
-    import subprocess
-    cmd = ["grep", "-rnI", "--include=*.java", pattern, str(context.patched_dir)]
-    
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    lines = result.stdout.split('\n')
-    
-    # Limite ai primi 20 risultati per preservare il contesto
-    return '\n'.join(lines[:20])
-\end{lstlisting}
-
-Lo strumento è un wrapper attorno a \texttt{grep -rnI --include=*.java}, che esegue una ricerca
+tramite \texttt{search\_symbol}. Lo strumento è un wrapper attorno a \texttt{grep -rnI --include=*.java}, che esegue una ricerca
 \textit{case-sensitive} ricorsiva sui soli file Java; il flag \texttt{-I} ignora i file binari (es. \texttt{.class})
 che genererebbero output illeggibile. In fase \texttt{EXPLORE} serve a localizzare l'implementazione di un metodo
 citato nello stack trace, trovare le assegnazioni di una variabile \texttt{null} o individuare implementazioni
@@ -191,24 +176,8 @@ multiple di un'interfaccia. L'output è troncato a 20 risultati.
 
 \subsubsection{\texttt{get\_method\_signature}: Verifica delle API Reali}
 \label{subsubsec:3.4.4.3}
-Per risolvere le ambiguità del sistema di tipi di Java, l'agente dispone di \texttt{get\_method\_signature}, che
-ispeziona dinamicamente le firme dei metodi:
-
-\begin{lstlisting}[language=Python, label={lst:tool_get_method_signature}]
-def tool_get_method_signature(context: ToolContext, class_path: str, method_name: str) -> str:
-    """Estrae le firme reali dei metodi pubblici per risolvere ambiguità di overload."""
-    # Riutilizzo del modulo di estrazione per coerenza
-    from logic_fl.ingredient_forge import _extract_public_methods
-    
-    target_file = context.patched_dir / class_path
-    all_methods = _extract_public_methods(target_file)
-    
-    # Filtraggio mirato sul nome del metodo
-    relevant_methods = [m for m in all_methods if method_name in m]
-    return '\n'.join(relevant_methods)
-\end{lstlisting}
-
-Lo strumento riutilizza la funzione \texttt{\_extract\_public\_methods()} di \texttt{ingredient\_forge.py} (Fase 2):
+Per risolvere le ambiguità del sistema di tipi di Java, l'agente dispone di \texttt{get\_method\_sig\\nature}, che
+ispeziona dinamicamente le firme dei metodi. Lo strumento riutilizza la funzione \texttt{\_extract\_public\_methods()} di \texttt{ingredient\_forge.py} (Fase 2):
 condividere l'estrattore garantisce che le API esplorate dinamicamente abbiano la stessa struttura testuale di
 quelle fornite negli ``Ingredients''. Il parametro \texttt{method\_name} filtra i risultati per ridurre il rumore
 delle classi con molti metodi.
@@ -216,43 +185,27 @@ delle classi con molti metodi.
 \subsubsection{\texttt{apply\_ast\_patch}: L'Atto di Riparazione Strutturale}
 \label{subsubsec:3.4.4.4}
 Questo strumento sancisce la transizione dallo stato esplorativo allo stato
-esecutivo (\texttt{PATCH}), materializzando la modifica al codice:
-
-\begin{lstlisting}[language=Python, label={lst:tool_apply_ast_patch}]
-def tool_apply_ast_patch(context: ToolContext, file_path: str, method_name: str, new_method_body: str, target_line: int = None) -> str:
-    """Sostituisce strutturalmente il metodo target nel file sorgente."""
-    from patch_agent.ast_applier import apply_and_write
-    
-    target_path = context.patched_dir / file_path
-    
-    # Delega la sostituzione all'infrastruttura Tree-sitter
-    success, diff = apply_and_write(
-        file_path=target_path, 
-        method_name=method_name, 
-        new_source=new_method_body,
-        target_line=target_line
-    )
-    
-    if success:
-        return f"[SUCCESS] Patch applied successfully.\nDiff:\n{diff}"
-    else:
-        return f"[FAILED] Failed to apply patch."
-\end{lstlisting}
-
-La funzione delega il lavoro pesante a \texttt{apply\_and\_write()} del modulo \texttt{ast\_applier.py}, cuore della
+esecutivo (\texttt{PATCH}), materializzando la modifica al codice. La funzione delega il lavoro pesante a \texttt{apply\_and\_write()} del modulo \texttt{ast\_applier.py}, cuore della
 manipolazione AST/CST via Tree-sitter. Il diff unificato restituito al modello ha funzione puramente diagnostica:
 offre una conferma visiva di ciò che è stato alterato, così che l'agente possa accorgersi di eventuali rimozioni
 accidentali di righe ancor prima di compilare.
 
-\newpage
 \subsubsection{\texttt{compile\_check} e \texttt{run\_tests}: Gli Oracoli di Validazione}
 \label{subsubsec:3.4.4.5}
-Gli ultimi due strumenti, \texttt{compile\_check} e \texttt{run\_tests}, fungono da oracolo sintattico e semantico,
-guidando le fasi \texttt{COMPILE} e \texttt{TEST}. Per garantire isolamento e tolleranza ai guasti (timeout, loop,
-dipendenze), entrambi delegano l'esecuzione al sandbox di \texttt{sandbox\_evaluator.py} anziché eseguire comandi
-shell diretti. \texttt{compile\_check} si affida a \texttt{compile\_patched\_source()}, troncando l'output di
-\texttt{javac} a 3000 caratteri per isolare la radice dell'errore primario. \texttt{run\_tests} innesca
-\texttt{evaluate()}, che riesegue la suite JUnit e distilla un feedback biforcato in \texttt{PASS},
-\texttt{COMPILE\_ERROR} (disallineamenti non intercettati prima) o \texttt{TEST\_FAIL} (con stack trace), fornendo
-all'agente le coordinate per riconsiderare la logica della patch.
+Gli ultimi due strumenti chiudono il ciclo agendo da oracoli di verifica: \texttt{compile\_check} controlla che il
+codice modificato sia sintatticamente valido (fase \texttt{COMPILE}), \texttt{run\_tests} che superi la suite di test
+(fase \texttt{TEST}). Per ragioni di isolamento e tolleranza ai guasti (timeout, loop infiniti, dipendenze mancanti),
+nessuno dei due lancia comandi shell direttamente: entrambi delegano l'esecuzione al sandbox di
+\texttt{sandbox\_evaluator.py}.
 
+\begin{description}
+    \item[\texttt{compile\_check}:] compila la sorgente tramite \texttt{compile\_patched\_source()}; se la
+    compilazione fallisce, restituisce l'output di \texttt{javac} troncato a 3000 caratteri, in modo da mostrare
+    all'agente l'errore primario senza sommergerlo nella cascata di errori secondari che ne derivano.
+
+    \item[\texttt{run\_tests}:] riesegue la suite JUnit tramite \texttt{evaluate()} e restituisce uno fra tre esiti, 
+    \texttt{PASS}, \texttt{COMPILE\_ERROR} oppure \texttt{TEST\_FAIL} (quest'ultimo corredato dello stack trace), 
+    che dicono all'agente se la patch ha funzionato e, in caso negativo, dove ha ceduto.
+\end{description}
+
+\clearpage

@@ -132,7 +132,7 @@ Il secondo componente è il modulo di \textbf{prompt generativi} (SpecReason e P
 che utilizza il modello GPT-4o (deployment Azure \texttt{gpt-4o}, API version \texttt{2024-02-01}) come modello linguistico di base,
 accessibile tramite Azure OpenAI API. La manipolazione strutturale del codice sorgente
 è implementata tramite Tree-sitter. Ogni bug è stato eseguito con un budget massimo di
-3 tentativi, con un massimo di 15 round di tool-use per tentativo.
+3 tentativi, con un massimo di 9 round di tool-use per tentativo.
 
 Il terzo componente è il \textbf{valutatore automatico di plausibilità}, che verifica 
 la correttezza sintattica delle patch generate eseguendo la suite di test 
