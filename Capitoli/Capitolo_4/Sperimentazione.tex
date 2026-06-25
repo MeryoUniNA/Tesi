@@ -189,7 +189,7 @@ l'identificatore del bug (ad esempio Chart-4), il sistema ha orchestrato in sequ
 I risultati sono stati classificati come: PASS se almeno uno dei tre tentativi ha prodotto una patch 
 che supera la suite di test completa; FAIL se nessun tentativo ha superato la build.
 
-\subsection{Protocollo validazione manuale}
+\subsection{Protocollo di validazione manuale}
 
 La determinazione della validità di una patch ha richiesto una revisione manuale
 per ciascuna delle 22 patch plausibili, condotta con il supporto di strumenti di analisi
@@ -229,7 +229,7 @@ Una patch è stata classificata come plausibile/non valida se:
     o l'introduzione di regressioni silenti.
 \end{itemize}
 
-\subsection{Estrazione patches VibeRepair}
+\subsection{Estrazione delle patch di VibeRepair}
 
 Per il confronto con HybridRepair, le patch corrette di VibeRepair sono state estratte dai dati pubblici del paper originale, specificamente dai file delle patch 
 semanticamente equivalenti al Ground Truth. Per ciascuno dei 37 bug del dataset, è stato verificato se VibeRepair disponeva di una patch 
@@ -300,7 +300,7 @@ Mockito-18 & $\times$ & $-$          & $\times$ & $\times$ \\
 
 % ─────────────────────────────────────────────
 \newpage
-\section{RQ1 --- Patch plausibili}
+\section{RQ1, Patch plausibili}
 
 HybridRepair genera patch plausibili per \textbf{22 bug su 37 (59,5\%)}.
 Il sistema ha fallito su 15 bug. I fallimenti si concentrano prevalentemente su progetti
@@ -315,7 +315,7 @@ non è direttamente ricavabile dai dati pubblicati.
 \end{quote}
 
 % ─────────────────────────────────────────────
-\section{RQ2 --- Patch valide}
+\section{RQ2, Patch valide}
 
 Delle 22 patch plausibili, \textbf{15 sono state giudicate valide (68,2\% di precision)},
 ovvero semanticamente equivalenti o sostanzialmente equivalenti al Ground Truth.
@@ -326,7 +326,7 @@ semanticamente valido (15/22), corrispondente al 40,5\% del dataset complessivo 
 \end{quote}
 
 % ─────────────────────────────────────────────
-\section{RQ3 --- Confronto con VibeRepair}
+\section{RQ3, Confronto con VibeRepair}
 
 Il confronto con VibeRepair è effettuato sulla metrica delle \textbf{patch corrette/valide},
 che rappresenta l'unica base di confronto omogenea disponibile: i dati pubblicati da
@@ -479,43 +479,53 @@ modificate se non si preservano le operazioni con effetti collaterali.
 \subsection{Direzioni di miglioramento}
 \label{subsec:direzioni-miglioramento}
 
-%L'analisi dei casi problematici suggerisce alcune direzioni concrete per una successiva
-%iterazione del sistema. I due casi intercettati dal validatore semantico (Csv-9, Csv-11)
-%indicano che il valutatore di plausibilità potrebbe essere esteso con un controllo
-%automatico dei contratti documentati nel Javadoc (ad esempio annotazioni
-%\texttt{@return}, \texttt{@throws}), così da intercettare a monte le violazioni di
-%contratto API non coperte dalla suite di test. Il caso Closure-2 suggerisce invece di
-%estendere SpecReason con una verifica esplicita degli effetti dell'early return
-%introdotto sui rami di controllo preesistenti (es. chiamate ricorsive), per ridurre i
-%casi di test-suite blindness legati a comportamenti più aggressivi del Ground Truth.
-%Il caso Chart-16 evidenzia infine la necessità di arricchire il prompt del PatchAgent
-%con un'analisi statica delle chiamate rimosse rispetto al codice originale, in modo da
-%segnalare la rimozione di chiamate con effetti collaterali come potenziale regressione,
-%anche quando la patch supera la suite di test.
+L'analisi suggerisce cinque aree di intervento per una successiva iterazione del sistema, dalla
+sintesi delle patch fino all'estensione della valutazione empirica.
 
-Sul fronte della validazione, il margine di miglioramento più rilevante riguarda il meccanismo di
-auto-critica dello \texttt{SpecCritic} che, usando lo stesso modello base come generatore e valutatore, è
-soggetto a un bias di conferma speculare (cfr. Sezione~\ref{subsubsec:limite-selfcritique}). Per spezzarlo, la
-validazione necessita di un orizzonte di verifica esterno e indipendente, lungo tre direttrici complementari. La
-prima è un paradigma di \textbf{Multi-Agent Debate} (o valutazione Cross-Model) \cite{du2023improving}: delegando
-il ruolo di critico a un modello di una famiglia concorrente (es. Claude o Gemini), si sfrutta l'eterogeneità di
-dati di pre-training e architettura affinché i \textit{blind-spot} del generatore non coincidano con quelli del
-validatore. La seconda è l'adozione di un \textbf{Process Reward Model (PRM)} \cite{lightman2023lets}, un modello
-specializzato tramite fine-tuning esclusivamente per la verifica rigorosa di ogni singolo step logico della
-\texttt{Chain-of-Thought}, anziché per la generazione di codice. La terza ancora la critica a oracoli automatici
-deterministici (\textit{execution-based feedback}) \cite{shinn2023reflexion}: \textit{type checker} che
-intercettano a tempo di compilazione le allucinazioni del modello (es. variabili non dichiarate) e
-\textit{model checker} formali capaci di dimostrare l'assenza di stati di stallo (\textit{deadlock}) nel flusso
-di esecuzione.
+\paragraph{Controlli mirati sulla sintesi.} I casi problematici indicano tre interventi puntuali.
+I due casi intercettati dal validatore semantico (Csv-9, Csv-11) suggeriscono di estendere il
+valutatore di plausibilità con un controllo automatico dei contratti documentati nel Javadoc
+(es. \texttt{@return}, \texttt{@throws}), affiancato da un'analisi di nullità basata su
+\textit{pluggable type-checking}~\cite{papi2008practical}, per intercettare a monte le violazioni di
+contratto non coperte dai test. Il caso Closure-2 suggerisce di estendere \texttt{SpecReason} con una
+verifica esplicita degli effetti dell'\textit{early return} sui rami di controllo preesistenti
+(es. chiamate ricorsive). Il caso Chart-16 indica infine di arricchire il prompt del
+\texttt{PatchAgent} con un'analisi statica delle chiamate rimosse, così da segnalare come potenziale
+regressione la rimozione di chiamate con effetti collaterali, anche quando la patch supera i test.
 
-Sul fronte della fault localization, i 15 fallimenti di RQ1 si concentrano su bug con
+\paragraph{Validazione esterna e indipendente.} Il margine più rilevante riguarda l'auto-critica
+dello \texttt{SpecCritic} che, usando lo stesso modello come generatore e valutatore, è soggetto a un
+bias di conferma speculare (cfr. Sezione~\ref{subsubsec:limite-selfcritique}). Spezzarlo richiede
+orizzonti di verifica esterni, lungo tre direttrici. La prima è il \textbf{Multi-Agent Debate}
+(valutazione Cross-Model)~\cite{du2023improving}: affidare la critica a un modello di un'altra famiglia
+(es. Claude o Gemini) sfrutta l'eterogeneità di pre-training e architettura affinché i
+\textit{blind-spot} di generatore e validatore non coincidano. La seconda è un \textbf{Process Reward
+Model (PRM)}~\cite{lightman2023lets}, specializzato via fine-tuning nella verifica di ogni singolo step
+della \texttt{Chain-of-Thought} anziché nella generazione di codice. La terza ancora la critica a
+oracoli deterministici (\textit{execution-based feedback})~\cite{shinn2023reflexion}: \textit{type
+checker} che intercettano a compile-time le allucinazioni (es. variabili non dichiarate) e
+\textit{model checker} formali capaci di provare l'assenza di \textit{deadlock}.
+
+\paragraph{Rafforzamento dell'oracolo di test.} La causa prima delle 7 patch plausibili-non-valide è
+la debolezza della suite come oracolo: una patch che supera i test può violare il comportamento atteso
+su casi non coperti, fenomeno noto come \textit{overfitting} alla suite di test~\cite{smith2015overfitting}.
+Oltre a rafforzare il giudizio semantico, si può irrobustire l'oracolo stesso, generando automaticamente
+nuovi test che ne amplino la copertura comportamentale prima del giudizio di
+plausibilità~\cite{yang2017better}. Due tecniche sono promettenti: il \textbf{differential testing}, che
+confronta la patch candidata con il programma di riferimento, o con patch candidate alternative, su
+input generati per esporre divergenze osservabili, e il \textbf{mutation testing}~\cite{jia2011analysis},
+che misura quanto la suite distingue varianti comportamentali, individuando le regioni sotto-specificate
+come i metodi secondari coinvolti nei casi Chart-16 e JacksonDatabind-13.
+
+\paragraph{Robustezza della fault localization.} I 15 fallimenti di RQ1 si concentrano su bug con
 catene causali complesse o dipendenze inter-procedurali profonde
-(\mbox{Closure-171}, JacksonData\-bind\nobreakdash-107, i bug di Commons Math e \mbox{Mockito-18}): un miglioramento di LogicFL
-su questi pattern, o un meccanismo di fallback che combini più ipotesi di
-localizzazione, potrebbe aumentare la copertura del sistema. Infine, una successiva
-sperimentazione dovrebbe estendere il dataset oltre i 37 bug NPE qui considerati, per
-verificare se i pattern di successo osservati (bug multi-punto con propagazione cross-method)
-si confermano su un campione più ampio e su altre categorie di difetti.
+(\mbox{Closure-171}, JacksonData\-bind\nobreakdash-107, i bug di Commons Math e \mbox{Mockito-18}):
+migliorare LogicFL su questi pattern, o introdurre un fallback che combini più ipotesi di
+localizzazione, potrebbe aumentare la copertura del sistema.
+
+\paragraph{Estensione del dataset.} Una successiva sperimentazione dovrebbe estendere il dataset oltre
+i 37 bug NPE qui considerati, per verificare se i pattern di successo osservati (bug multi-punto con
+propagazione cross-method) si confermano su un campione più ampio e su altre categorie di difetti.
 
 % ─────────────────────────────────────────────
 \section{Threats to Validity}

@@ -31,104 +31,178 @@ correggere, il problema diventa \textit{come} scriverlo in codice Java pulito, c
 stile del progetto e superi i test automatici. Qui gli LLM sono insuperabili: comprendono
 il contesto e generano codice flessibile con grande efficacia.
 
-\subsection{L'approccio ibrido in pratica: l'esempio Closure-2}
+\subsection{L'approccio ibrido in pratica: l'esempio Csv-4}
 
-Per chiarire il funzionamento, analizziamo un caso reale: il bug \textbf{Closure-2}, un errore
+Per chiarire il funzionamento, analizziamo un caso reale: il bug \textbf{Csv-4}, un errore
 di tipo \texttt{NullPointerException} (NPE) tratto dal benchmark Defects4J e situato
-all'interno del Google Closure Compiler.
+all'interno di Apache Commons CSV, nella classe \texttt{CSVParser}.
+
+Questo esempio è interessante per un motivo controintuitivo: è un caso in cui \emph{sia}
+un sistema basato solo su LLM \emph{sia} l'approccio ibrido arrivano alla patch corretta.
+Proprio per questo è utile come esempio motivazionale: ci permette di spostare l'attenzione
+dal banale ``chi supera i test'' al punto che davvero conta, cioè \textbf{con quali garanzie}
+e attraverso quale processo si arriva a una soluzione che non solo ``sembra giusta'', ma
+\emph{è} giusta. Come vedremo, è esattamente qui che emerge il contributo distintivo
+dell'approccio ibrido: non tanto nel \emph{generare} la correzione, cosa che oggi un buon
+LLM sa fare, quanto nel \textbf{produrre da se la diagnosi} che rende quella correzione
+più affidabile. È la concretizzazione del principio ``separare diagnosi e sintesi'' enunciato sopra.
 
 \subsubsection{Il problema}
 
-Nel codice originale un'interfaccia punta a un oggetto che non esiste. Quando il programma
-chiama il metodo \texttt{getImplicitPrototype()}, riceve in risposta \texttt{null}. Alla riga
-successiva tenta di estrarre le proprietà da questo \texttt{null} con \texttt{getOwnPropertyNames()},
-e il risultato è il crash del programma e il blocco della compilazione. Gli sviluppatori avevano
-persino lasciato un commento --- \textit{``questo è un errore di annotazione, ma non dovrebbe far
-crashare tutto''} --- ma si erano dimenticati di inserire una protezione.
+Il metodo \texttt{getHeaderMap()} deve restituire una \emph{copia} della mappa che associa i
+nomi delle colonne alla loro posizione. C'è però una sottigliezza nel suo contratto: quando il
+formato CSV \textbf{non definisce alcun header}, non esiste nessuna mappa, e il metodo deve
+restituire \texttt{null}, non una mappa vuota, per segnalare in modo inequivocabile
+``nessun header''. Distinguere \texttt{null} (``header assente'') da \texttt{\{\}} (``header
+presente ma con zero colonne'') fa parte della semantica attesa, ed è esattamente ciò che il
+test \texttt{testNoHeaderMap()} verifica con un \texttt{assertNull}.
 
-\subsubsection{Come fallisce un'IA ``pura'' (VibeRepair)}
-
-Prendiamo VibeRepair \cite{zhu2026specification}, uno dei migliori sistemi APR su Defects4J basati
-solo su LLM del 2026. Prova a risolvere questo bug leggendo il codice e capendo
-(correttamente) che il metodo non deve andare in crash. Propone quindi una via d'uscita rapida:
+Nel codice originale, quando manca l'header, il campo \texttt{this.headerMap} resta
+\texttt{null}; alla riga 288 il metodo tenta comunque di costruirne una copia
+(\texttt{new LinkedHashMap<>(null)}) e il risultato è il crash:
 
 \begin{lstlisting}[language=Java]
-if (implicitProto == null) {
-    t.makeError(n, "Bad type annotation...");
-    return; // <- L'IA decide di bloccare e uscire subito
+public Map<String, Integer> getHeaderMap() {
+    return new LinkedHashMap<String, Integer>(this.headerMap); // NPE se headerMap e' null
 }
 \end{lstlisting}
 
-A prima vista sembra un'ottima soluzione: il crash sparisce e i test passano. In realtà
-\textbf{è un errore concettuale}. Con il \texttt{return}, l'IA interrompe bruscamente
-l'esecuzione del metodo. Poche righe più in basso c'è un ciclo \texttt{for-each} che dovrebbe
-analizzare altre interfacce valide, ma a causa di questa uscita anticipata verrebbero tutte
-ignorate in silenzio.
+Il \texttt{null} non nasce qui: nasce nel metodo \texttt{initializeHeader()}, dove la variabile
+\texttt{hdrMap} viene inizializzata a \texttt{null} (riga 325) e restituita immutata quando non
+c'è un header (riga 351); da lì viene assegnata al campo nel costruttore (riga 244) e infine
+provoca il crash alla riga 288. È una catena causale che attraversa più metodi.
 
-VibeRepair capisce che il programma deve sopravvivere, ma non si accorge del ciclo
-sottostante, che indica chiaramente quale sia la vera soluzione: \textbf{passare un insieme vuoto},
-in modo che il ciclo faccia ``zero giri'' senza interrompere il resto del programma.
+\subsubsection{La trappola: una patch che ``sembra giusta''}
 
-\subsubsection{Come funziona HybridRepair}
+C'è una correzione che viene immediatamente in mente e che sembra perfetta: se manca l'header,
+restituiamo una \textbf{mappa vuota}.
 
-Ecco come l'approccio ibrido risolve la situazione, in tre passi:
+\begin{lstlisting}[language=Java]
+public Map<String, Integer> getHeaderMap() {
+    // "Niente header? Restituiamo una mappa vuota": il crash sparisce...
+    return this.headerMap == null ? new LinkedHashMap<>() : new LinkedHashMap<>(this.headerMap);
+}
+\end{lstlisting}
+
+Compila, elimina l'NPE e a prima vista è del tutto ragionevole. In realtà
+\textbf{viola il contratto}: l'API deve restituire \texttt{null}, non \texttt{\{\}}. Il test lo
+smaschera subito:
+
+\begin{lstlisting}
+java.lang.AssertionError: expected null, but was:<{}>
+    at CSVParserTest.testNoHeaderMap(CSVParserTest.java:670)
+\end{lstlisting}
+
+Questa è la classica insidia di un approccio puramente ``code-centric'': una patch che toglie il
+sintomo (il crash) ma cambia in silenzio il significato del metodo.\footnote{Non è un esempio
+costruito a tavolino: la patch alla mappa vuota è esattamente la \emph{prima} soluzione proposta
+dall'LLM all'interno di HybridRepair, prima che il loop di validazione la respingesse (cfr.
+Step 3).} Il punto chiave è che, per evitarla, non serve un'IA ``più intelligente'': serve che il
+sistema sappia con precisione \textit{qual è il comportamento atteso}.
+
+\subsubsection{Come la affronta VibeRepair (l'IA che ragiona sulla specifica)}
+
+VibeRepair \cite{zhu2026specification} è uno dei migliori sistemi APR su Defects4J basati su LLM
+del 2026. Non è un LLM ``ingenuo'' che riscrive il codice in un colpo solo: è un approccio
+\textbf{specification-centric}. Invece di modificare direttamente il codice, traduce il metodo
+difettoso in una \emph{specifica del comportamento}, ne inferisce l'intento corretto, ripara la
+specifica e solo allora rigenera il codice; inoltre usa il feedback dei test falliti per
+raffinare la propria ipotesi. Su Csv-4 questo processo lo porta alla patch corretta:
+
+\begin{lstlisting}[language=Java]
+public Map<String, Integer> getHeaderMap() {
+    if (this.headerMap == null) {
+        return null;
+    }
+    return new LinkedHashMap<String, Integer>(this.headerMap);
+}
+\end{lstlisting}
+
+VibeRepair, quindi, \textbf{non cade nella trappola}: evita sia il crash sia la mappa vuota. Vale
+però la pena notare \emph{su cosa} poggia questo successo. Primo: come la maggior parte dei
+sistemi LLM su Defects4J, VibeRepair riceve già la zona difettosa su cui lavorare (la classica
+assunzione di ``fault localization perfetta''): non individua da sé il guasto. Secondo: la sua
+diagnosi è una specifica \emph{inferita} dal codice, un'astrazione che può catturare bene
+l'intento, come in questo caso, oppure mancarlo. La correttezza, in altre parole, dipende
+dalla \textit{bontà di un'inferenza}, non da una garanzia formale.
+
+\subsubsection{Come la affronta HybridRepair (diagnosi formale + sintesi guidata)}
+
+L'approccio ibrido raggiunge la stessa patch corretta, ma per una strada diversa, in tre passi:
 
 \begin{enumerate}
-    \item \textbf{Step 1 (LogicFL).} Il motore logico esegue i test falliti e
-    ricostruisce in modo inequivocabile la catena dell'errore:
+    \item \textbf{Step 1 (LogicFL, diagnosi).} È il passo che fa la differenza. Senza ricevere
+    alcun suggerimento su \emph{dove} si trovi il bug, il motore logico esegue il test fallito e
+    ricostruisce \emph{autonomamente} l'intera catena dell'errore (non solo la riga del crash):
 \begin{lstlisting}[language=Prolog]
-null_origin(implicitProto, line(1570), method('getImplicitPrototype')).
-npe_cause(implicitProto, line(1571), method('getOwnPropertyNames')).
+npe(line(288), null_expr(headerMap)).
+caused_by(npe(line(288)), null_literal(line(325))).     % Map<...> hdrMap = null;
+caused_by(npe(line(288)), return(line(351), hdrMap)).   % initializeHeader() ritorna hdrMap
+caused_by(npe(line(288)), assign(line(244), headerMap)).% this.headerMap = initializeHeader()
 \end{lstlisting}
     All'LLM non viene detto genericamente ``c'è un crash da qualche parte''. Riceve un referto
-    preciso: \textit{la variabile \texttt{implicitProto} nasce \texttt{null} alla riga 1570 e
-    provoca il crash alla riga 1571}.
+    preciso: \textit{il \texttt{null} nasce alla riga 325, si propaga attraverso le righe 351 e
+    244, e provoca il crash alla riga 288}. È esattamente il passo che un sistema puramente LLM
+    \textbf{non compie}: dove VibeRepair dà per scontato di sapere già quale metodo toccare, qui
+    la localizzazione del guasto e la sua causa non sono un'assunzione di partenza, ma un
+    \textbf{risultato dimostrato} dal motore logico.
 
-    \item \textbf{Step 2 (Estrazione AST).} \\
-    Il sistema isola le sole ${\sim}30$ righe del metodo difettoso, scartando le altre 1700
-    righe del file. In questo modo l'LLM ha una visuale chiara e vede immediatamente il ciclo
-    \texttt{for-each} rilevante.
+    \item \textbf{Step 2 (Estrazione AST, contesto).} \\
+    Il sistema isola le sole ${\sim}35$ righe dei due metodi rilevanti
+    (cioè \texttt{getHeaderMap} e \texttt{initializeHeader}), scartando le altre
+    ${\sim}460$ righe del file. In questo modo l'LLM ha una visuale pulita e mirata sul
+    punto da correggere.
 
-    \item \textbf{Step 3 (Sintesi LLM).} \\
-    Ora l'LLM ha tutto: la causa esatta e un contesto pulito. Ragiona sul problema e capisce che
-    l'obiettivo non è solo evitare il crash alla riga 1571, ma permettere al ciclo successivo di
-    proseguire. La soluzione è inizializzare la variabile con una lista vuota (\texttt{HashSet}):
+    \item \textbf{Step 3 (Sintesi LLM, con paletti e validazione).} \\
+    L'LLM riceve la causa esatta, un contesto pulito e una regola esplicita:
+    \emph{preservare il contratto documentato; superare i test non basta}. La sua prima proposta
+    è proprio la patch alla mappa vuota; il loop di validazione esegue i test e restituisce
+    \texttt{expected null, but was:<\{\}>}. L'LLM legge la traccia, capisce che il contratto
+    richiede \texttt{null} e corregge:
 \begin{lstlisting}[language=Java]
-// Riga originale rimossa:
-// currentPropertyNames = implicitProto.getOwnPropertyNames();
-// Patch correttiva inserita:
-if (implicitProto == null) {
-    currentPropertyNames = new HashSet<>();
-} else {
-    currentPropertyNames = implicitProto.getOwnPropertyNames();
+public Map<String, Integer> getHeaderMap() {
+    return this.headerMap == null ? null : new LinkedHashMap<>(this.headerMap);
 }
 \end{lstlisting}
+    Tutti i 48 test passano e il controllo semantico conferma che il contratto è rispettato.
 \end{enumerate}
 
 Questa patch ottiene esattamente lo stesso risultato della correzione applicata nella realtà
-dagli ingegneri di Google (che hanno usato \texttt{ImmutableSet.of()}, ma la logica è identica).
-I test passano e, soprattutto, il comportamento del software resta corretto.
+dagli sviluppatori di Apache Commons CSV. La differenza rispetto a VibeRepair non sta nel
+\emph{risultato}, identico, ma nelle \textbf{garanzie}: il guasto è localizzato in modo
+autonomo e la causa è dimostrata come catena formale, non inferita; e la trappola della mappa
+vuota non viene evitata per fortuna o per bravura, ma \emph{scartata esplicitamente} da un loop
+di validazione guidato da una regola sul contratto.
 
 \subsubsection{Il confronto}
 
 \begin{table}[h]
 \centering
-\caption{Confronto tra VibeRepair e HybridRepair}
+\caption{Confronto tra VibeRepair e HybridRepair sul bug Csv-4}
 \vspace{2mm}
-\begin{tabular}{lll}
+\small
+\begin{tabularx}{\textwidth}{l >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
 \toprule
 \textbf{Caratteristica} & \textbf{VibeRepair (Solo IA)} & \textbf{HybridRepair (Logica + IA)} \\
 \midrule
-Ricerca del guasto & Richiede aiuti esterni & Completamente autonomo (LogicFL) \\
-Causa dell'errore & Dedotta dal codice per tentativi & Dimostrata in modo formale (Prolog) \\
-Cosa vede l'IA & Un'idea vaga del problema & Referto esatto + solo il codice utile \\
-Codice generato & \texttt{return} anticipato (errato) & Protezione con \texttt{HashSet} vuoto (corretto) \\
+Localizzazione del guasto & Assunta nota (zona fornita) & Autonoma e formale (LogicFL) \\
+Causa dell'errore & Inferita da una specifica & Dimostrata come catena (Prolog, 4 liv.) \\
+Cosa vede l'IA & Specifica inferita dal metodo & Referto formale + soli metodi utili \\
+Difesa dalla mappa vuota & Raffinamento della specifica & Regola sul contratto + validazione \\
+Patch finale & \texttt{return null} (corretta) & \texttt{return null} (corretta) \\
 Supera i test? & Sì & Sì \\
-È davvero corretto? & No ($\times$) & Sì \\
+È davvero corretto? & Sì & Sì \\
 \bottomrule
-\end{tabular}
+\end{tabularx}
 \end{table}
 
-Questo esempio mostra un punto fondamentale: la differenza tra una patch che ``sembra giusta''
-e una che ``è giusta'' non dipende da quanto è intelligente l'IA, ma dalla \textbf{qualità delle
-informazioni} che le forniamo.
+A differenza dell'esempio ``da manuale'' in cui l'IA fallisce, qui entrambi i sistemi
+\emph{ben progettati} arrivano alla soluzione giusta, ed è proprio questo a renderlo
+istruttivo. Il vero spartiacque non è ``IA contro ibrido'' in termini di test superati, ma la
+\textbf{trappola della mappa vuota}: una patch che ``sembra giusta'' e in cui un approccio
+ingenuo o puramente code-centric cadrebbe facilmente. Ciò che protegge da quella trappola non è
+quanto è ``intelligente'' l'IA, ma la \textbf{qualità delle informazioni} e il rigore del
+processo: VibeRepair ricostruisce l'intento \emph{inferendo} una specifica; HybridRepair lo
+\emph{garantisce} con una diagnosi formale e autonoma e con un controllo esplicito del contratto.
+La differenza, in definitiva, è nel \textit{livello di garanzia}, inferenza contro
+dimostrazione, localizzazione fornita contro localizzazione autonoma, in modo riproducibile.
