@@ -176,7 +176,7 @@ di validazione guidato da una regola sul contratto.
 
 \subsubsection{Il confronto}
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Confronto tra VibeRepair e HybridRepair sul bug Csv-4}
 \vspace{2mm}
@@ -185,10 +185,16 @@ di validazione guidato da una regola sul contratto.
 \toprule
 \textbf{Caratteristica} & \textbf{VibeRepair (Solo IA)} & \textbf{HybridRepair (Logica + IA)} \\
 \midrule
-Localizzazione del guasto & Assunta nota (zona fornita) & Autonoma e formale (LogicFL) \\
-Causa dell'errore & Inferita da una specifica & Dimostrata come catena (Prolog, 4 liv.) \\
-Cosa vede l'IA & Specifica inferita dal metodo & Referto formale + soli metodi utili \\
-Difesa dalla mappa vuota & Raffinamento della specifica & Regola sul contratto + validazione \\
+Input richiesti & Codice eseguibile + test falliti + \emph{posizione del guasto} (data)
+  & Codice eseguibile + test fallito \\
+Localizzazione del guasto & Input (assunta nota: FL perfetta)
+  & Output (calcolata da LogicFL) \\
+Causa dell'errore & Inferita come specifica (astrazione)
+  & Dimostrata come catena di flusso dati (4 livelli) \\
+Cosa vede l'LLM & Specifica di comportamento inferita (+ test falliti)
+  & Referto causale + i soli 2 metodi rilevanti \\
+Difesa dalla mappa vuota & Raffinamento della specifica sui test
+  & Loop di validazione sui test \\
 Patch finale & \texttt{return null} (corretta) & \texttt{return null} (corretta) \\
 Supera i test? & Sì & Sì \\
 È davvero corretto? & Sì & Sì \\

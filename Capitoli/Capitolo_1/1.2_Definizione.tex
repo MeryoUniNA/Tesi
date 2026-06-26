@@ -223,3 +223,25 @@ per ricostruire in modo tracciabile e privo di ambiguità il percorso del valore
 È proprio questa rigorosa tracciabilità causale a motivarne l'impiego come "guida" semantica per i modelli generativi: il
 funzionamento dello strumento e il modo in cui esso viene integrato nell'architettura proposta saranno descritti nel dettaglio
 nel capitolo successivo.
+
+\subsection{Contributi della tesi}
+
+Il problema affrontato in questa tesi è la riparazione automatica di \textit{bug} di tipo
+\textit{NullPointerException} in programmi Java reali, senza ricorrere alla
+\textit{Perfect Fault Localization}: a differenza della maggior parte della letteratura esistente,
+il sistema non riceve in ingresso la posizione esatta del difetto, ma deve individuarla
+autonomamente a partire dal solo identificatore del \textit{bug}.
+
+Il contributo principale è \textbf{HybridRepair}, un sistema neuro-simbolico che integra
+la localizzazione causale formale di \textit{LogicFL} --- basata su inferenza logica in Prolog ---
+con la generazione di \textit{patch} guidata da GPT-4o, operando in modalità \textit{fully-automated}
+su 37 \textit{bug} NPE estratti dal \textit{benchmark} standard Defects4J v2, distribuiti su 12
+progetti Java \textit{open source}.
+
+I risultati sperimentali mostrano che HybridRepair genera \textit{patch} plausibili per
+\textbf{22 bug su 37 (59,5\%)}; di queste, \textbf{15 sono valide (68,2\% di precisione)},
+corrispondenti al \textbf{40,5\% del dataset complessivo}.
+Confrontando questo risultato con VibeRepair~\cite{zhu2026specification}, sistema allo stato
+dell'arte che opera però sotto l'assunzione di \textit{Perfect Fault Localization}, HybridRepair
+supera il \textit{baseline} in termini di \textit{patch} valide assolute (40,5\% contro 37,8\%),
+operando in condizioni operative significativamente più realistiche e sfidanti.
