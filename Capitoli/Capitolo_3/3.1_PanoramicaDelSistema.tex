@@ -1,8 +1,8 @@
 \section{Obiettivi e requisiti del sistema}
 \label{sec:obiettivi_requisiti}
-I capitoli precedenti hanno individuato il nodo critico del problema --- l'incapacità degli approcci
+I capitoli precedenti hanno individuato il nodo critico del problema, l'incapacità degli approcci
 APR tradizionali e degli LLM privi di guida formale di affrontare la natura inter-procedurale delle
-\textit{NullPointerException} --- e hanno indicato nell'ibridazione neuro-simbolica la direzione di
+\textit{NullPointerException}, e hanno indicato nell'ibridazione neuro-simbolica la direzione di
 soluzione. Prima di descrivere come questa direzione si materializzi in un'architettura concreta, è
 necessario operazionalizzare l'obiettivo generale in obiettivi di dettaglio verificabili e nei requisiti
 che lo strumento realizzato deve soddisfare. Tali obiettivi e requisiti costituiscono il riferimento
@@ -10,14 +10,14 @@ rispetto al quale, nel seguito del capitolo, verranno motivate le scelte archite
 Capitolo~\ref{cap:sperimentazione}, valutati i risultati sperimentali.
 
 \subsection{Obiettivi di dettaglio}
-A partire dall'obiettivo generale --- la riparazione automatica di difetti NPE reali guidata da una
-diagnosi formale --- la ricerca persegue i seguenti obiettivi specifici:
+A partire dall'obiettivo generale, la riparazione automatica di difetti NPE reali guidata da una
+diagnosi formale, la ricerca persegue i seguenti obiettivi specifici:
 \begin{itemize}
     \item[\textbf{O1}] \textbf{Riparazione \textit{fully-automated} di NPE reali.} Risolvere, senza
     alcun intervento umano nel ciclo, \textit{bug} di tipo \textit{NullPointerException} estratti dal
     \textit{benchmark} standard Defects4J, a partire dal solo identificatore del difetto.
     \item[\textbf{O2}] \textbf{Disaccoppiamento tra diagnosi e generazione.} Separare nettamente
-    l'inferenza deterministica delle cause dalla generazione stocastica del codice, così da contenere
+    l'inferenza \emph{deduttiva} delle cause, e deterministica nel senso di \emph{riproducibile}, così da contenere
     le allucinazioni logiche del modello e mantenere mirato e semanticamente fondato il suo intervento.
     \item[\textbf{O3}] \textbf{Tracciabilità e spiegabilità della diagnosi.} Garantire che il processo
     diagnostico sia sempre esplicabile, ancorando il ragionamento a regole logiche (Prolog) verificabili

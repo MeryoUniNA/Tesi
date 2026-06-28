@@ -16,17 +16,23 @@ l'esecuzione dei test falliti, LogicFL popola una \textit{Knowledge Base} in SWI
 traccia a ritroso la catena causale che lega l'espressione del crash all'origine esatta del valore \textit{null}
 \cite{kim2024identifying}. Il dettaglio del meccanismo è approfondito nel Capitolo~\ref{cap:architettura}.
 
-All'interno di \textit{HybridRepair}, LogicFL funge da "Oracolo dei Guasti" deterministico,
-fornendo all'intelligenza artificiale un referto causale privo di allucinazioni. È proprio questa rigorosa
+All'interno di \textit{HybridRepair}, LogicFL funge da \emph{oracolo dei guasti}: è un componente
+che, dato un test fallito, restituisce in modo deterministico un verdetto sulla causa del difetto,
+che le fasi successive assumono come dato di fatto e non come ipotesi da verificare. Fornisce così
+all'intelligenza artificiale un referto causale privo di allucinazioni. Questo, però, non lo rende
+\emph{infallibile}: il referto è una catena di cause candidate ordinate per priorità euristica, e
+nulla garantisce che la causa reale venga sempre individuata o posta in cima. Il determinismo ne
+assicura la \emph{riproducibilità}, non la correttezza assoluta. È proprio questa rigorosa
 tracciabilità causale a motivarne l'impiego come "guida" per i modelli generativi: l'adozione di \textit{LogicFL}
 persegue, in particolare, un duplice e vitale scopo.
 
 \begin{itemize}
-    \item \textbf{Fornire al motore generativo (LLM) un contesto semantico solido e "sicuro":} estraendo l'esatta catena
+    \item \textbf{Fornire al motore generativo (LLM) un contesto semantico mirato:} estraendo l'esatta catena
     logica e di esecuzione (i "fatti"), \textit{LogicFL} solleva l'LLM dal compito di navigare ciecamente nell'intero codice sorgente.
-    Tracciando esplicitamente come il valore \textit{null} viene trasferito all'interno del flusso di controllo, si isolano
-    esclusivamente le dipendenze e i percorsi realmente coinvolti. In questo modo si offre al modello un perimetro logico
-    inequivocabile su cui operare, completamente depurato dall'eccesso di contesto che tipicamente causa disorientamento.
+    Tracciando esplicitamente come il valore \textit{null} viene trasferito all'interno del flusso di controllo, 
+    si segue a ritroso la sola catena che ha prodotto il crash, isolando esclusivamente le dipendenze realmente coinvolte.  
+    In questo modo si offre al modello un perimetro logico inequivocabile su cui operare, completamente depurato 
+    dall'eccesso di contesto che tipicamente causa disorientamento.
 
     \item \textbf{Restringere drasticamente lo spazio di ricerca e le possibilità di allucinazione:} l'applicazione delle
     regole deduttive dello strumento funge da filtro inflessibile contro le associazioni spurie. Identificando con precisione
@@ -38,11 +44,13 @@ persegue, in particolare, un duplice e vitale scopo.
 \subsection{Tree-sitter: Parsing Incrementale ad Alta Fedeltà}
 Mentre LogicFL fornisce le coordinate logiche del difetto, la traduzione di queste direttive in un contesto 
 comprensibile per il modello generativo e l'applicazione materiale della \textit{patch} richiedono uno strumento 
-di \textit{parsing} del codice estremamente preciso. Per questo compito, l'architettura integra \textit{Tree-sitter}, 
-un generatore di parser incrementale ad altissime prestazioni.
+di \textit{parsing} del codice estremamente preciso. Per questo compito, l'architettura integra \textit{Tree-sitter}~\cite{brunsfeld_treesitter},
+un generatore di parser incrementale ad altissime prestazioni. Come gli altri strumenti descritti
+in questa sezione, è una tecnologia esterna preesistente, integrata in \textit{HybridRepair} ma
+non sviluppata in questo lavoro.
 
 A differenza dei tradizionali analizzatori statici che producono un \textit{Abstract Syntax Tree} scartando 
-informazioni "superflue" come spaziature, formattazione e commenti, Tree-sitter genera un \textit{Concrete Syntax Tree}. 
+informazioni "superflue" come spaziature, formattazione e commenti, Tree-sitter genera un \textit{Concrete Syntax Tree} (CST)~\cite{aho2006compilers}.
 Il CST mantiene una fedeltà assoluta al file testuale originale, registrando le coordinate spaziali esatte 
 (riga e colonna) di ogni singolo byte e nodo sintattico. 
 Questa caratteristica è di vitale importanza per \textit{HybridRepair}: permette di estrarre chirurgicamente il 

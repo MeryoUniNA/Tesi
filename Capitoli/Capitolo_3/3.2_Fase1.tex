@@ -296,7 +296,7 @@ cause_of(npe(Expr, Line), Cause, Loc) :- can_be_transferred(Expr, Cause, Loc).
 \end{lstlisting}
 
 Il primo caso copre il difetto puramente locale (l'entità è già nulla alla riga del crash); il secondo individua
-il punto in cui il \texttt{null} nasce per la prima volta --- in Csv-4 la riga~325; il terzo, quello
+il punto in cui il \texttt{null} nasce per la prima volta, in Csv-4 la riga~325; il terzo, quello
 interessante, segue la propagazione all'indietro di un passo, riconoscendo i tre modi in cui un \texttt{null}
 può trasferirsi tra espressioni: per \emph{assegnazione}, per passaggio \emph{parametro\,$\leftarrow$\,argomento}
 tra chiamante e chiamato, o tramite \emph{valore di ritorno}. Sono esattamente gli archi della

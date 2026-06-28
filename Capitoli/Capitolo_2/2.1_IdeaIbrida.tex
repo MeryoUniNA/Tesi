@@ -10,8 +10,13 @@ nell'individuare \textit{dove} si trova l'errore, ma non hanno la flessibilità 
 per scrivere il codice che lo risolve in un contesto reale.
 
 L'idea alla base di \textbf{HybridRepair} nasce proprio da qui: il mondo logico/simbolico
-e quello neurale/LLM non sono in competizione, ma \textbf{complementari}. Ciascuno dei due
-è forte esattamente dove l'altro è debole, e il sistema sfrutta questa asimmetria.
+e quello neurale/LLM non sono in competizione, ma \textbf{complementari}. 
+per la diagnosi si impiega \textbf{LogicFL}, uno strumento 
+preesistente, ma il contributo di questo lavoro è la 
+progettazione dell'\textbf{architettura di integrazione} che
+trasforma il suo referto formale in una guida strutturata per
+la sintesi LLM, con una validazione che va oltre i semplici
+test automatici.
 
 \subsection{La filosofia: separare diagnosi e sintesi}
 
@@ -49,13 +54,14 @@ più affidabile. È la concretizzazione del principio ``separare diagnosi e sint
 
 \subsubsection{Il problema}
 
-Il metodo \texttt{getHeaderMap()} deve restituire una \emph{copia} della mappa che associa i
-nomi delle colonne alla loro posizione. C'è però una sottigliezza nel suo contratto: quando il
-formato CSV \textbf{non definisce alcun header}, non esiste nessuna mappa, e il metodo deve
-restituire \texttt{null}, non una mappa vuota, per segnalare in modo inequivocabile
-``nessun header''. Distinguere \texttt{null} (``header assente'') da \texttt{\{\}} (``header
-presente ma con zero colonne'') fa parte della semantica attesa, ed è esattamente ciò che il
-test \texttt{testNoHeaderMap()} verifica con un \texttt{assertNull}.
+Il metodo \texttt{getHeaderMap()} restituisce una \emph{copia} della mappa che associa i
+nomi delle colonne alla loro posizione. Il suo Javadoc, però, si limita a dire ``returns a copy
+of the header map'': non specifica cosa accada quando un header non è definito. Quella parte del
+contratto non è documentata: è fissata dall'\emph{oracolo di test} \texttt{testNoHeaderMap()},
+che con un \texttt{assertNull} richiede che, in assenza di header, il metodo restituisca
+\texttt{null} e non una mappa vuota. È una specifica \emph{comportamentale}, confermata anche
+dalla correzione applicata dagli sviluppatori di Apache Commons CSV, secondo cui \texttt{null}
+(``header assente'') e \texttt{\{\}} (``header presente, zero colonne'') non sono intercambiabili.
 
 Nel codice originale, quando manca l'header, il campo \texttt{this.headerMap} resta
 \texttt{null}; alla riga 288 il metodo tenta comunque di costruirne una copia
@@ -68,9 +74,9 @@ public Map<String, Integer> getHeaderMap() {
 \end{lstlisting}
 
 Il \texttt{null} non nasce qui: nasce nel metodo \texttt{initializeHeader()}, dove la variabile
-\texttt{hdrMap} viene inizializzata a \texttt{null} (riga 325) e restituita immutata quando non
-c'è un header (riga 351); da lì viene assegnata al campo nel costruttore (riga 244) e infine
-provoca il crash alla riga 288. È una catena causale che attraversa più metodi.
+\texttt{hdrMap} viene inizializzata a \texttt{null} e restituita immutata quando non
+c'è un header; da lì viene assegnata al campo nel costruttore e infine
+provoca il crash. È una catena causale che attraversa più metodi.
 
 \subsubsection{La trappola: una patch che ``sembra giusta''}
 
@@ -121,8 +127,9 @@ public Map<String, Integer> getHeaderMap() {
 VibeRepair, quindi, \textbf{non cade nella trappola}: evita sia il crash sia la mappa vuota. Vale
 però la pena notare \emph{su cosa} poggia questo successo. Primo: come la maggior parte dei
 sistemi LLM su Defects4J, VibeRepair riceve già la zona difettosa su cui lavorare (la classica
-assunzione di ``fault localization perfetta''): non individua da sé il guasto. Secondo: la sua
-diagnosi è una specifica \emph{inferita} dal codice, un'astrazione che può catturare bene
+assunzione di ``fault localization perfetta''): non individua da sé il guasto. 
+Secondo: la sua diagnosi è una specifica \emph{inferita} dal solo metodo difettoso e raffinata sul
+feedback dei test falliti, non dalla conoscenza dell'intero codice, un'astrazione che può catturare bene
 l'intento, come in questo caso, oppure mancarlo. La correttezza, in altre parole, dipende
 dalla \textit{bontà di un'inferenza}, non da una garanzia formale.
 
@@ -140,7 +147,20 @@ caused_by(npe(line(288)), null_literal(line(325))).     % Map<...> hdrMap = null
 caused_by(npe(line(288)), return(line(351), hdrMap)).   % initializeHeader() ritorna hdrMap
 caused_by(npe(line(288)), assign(line(244), headerMap)).% this.headerMap = initializeHeader()
 \end{lstlisting}
-    All'LLM non viene detto genericamente ``c'è un crash da qualche parte''. Riceve un referto
+
+    \textbf{Questa catena non è lo stack trace.} Lo stack
+    trace dell'NPE contiene solo il punto di crash, la
+    riga 288, più due frame interni della JDK
+    (\texttt{LinkedHashMap.<init>}) e il test chiamante,
+    ma \emph{non} le righe 325, 351 e 244: quelle vengono
+    eseguite durante la costruzione dell'oggetto, sono già
+    ritornate quando l'eccezione scatta e perciò non
+    figurano sulla pila. Lo stack trace dice \emph{dove} il
+    programma è morto; la catena di LogicFL dice \emph{da
+    dove arriva il \texttt{null}} e come si propaga, è
+    un'analisi di flusso dei dati.
+
+    Quindi all'LLM non viene detto genericamente ``c'è un crash da qualche parte''. Riceve un referto
     preciso: \textit{il \texttt{null} nasce alla riga 325, si propaga attraverso le righe 351 e
     244, e provoca il crash alla riga 288}. È esattamente il passo che un sistema puramente LLM
     \textbf{non compie}: dove VibeRepair dà per scontato di sapere già quale metodo toccare, qui
@@ -154,11 +174,11 @@ caused_by(npe(line(288)), assign(line(244), headerMap)).% this.headerMap = initi
     punto da correggere.
 
     \item \textbf{Step 3 (Sintesi LLM, con paletti e validazione).} \\
-    L'LLM riceve la causa esatta, un contesto pulito e una regola esplicita:
-    \emph{preservare il contratto documentato; superare i test non basta}. La sua prima proposta
-    è proprio la patch alla mappa vuota; il loop di validazione esegue i test e restituisce
-    \texttt{expected null, but was:<\{\}>}. L'LLM legge la traccia, capisce che il contratto
-    richiede \texttt{null} e corregge:
+    L'LLM riceve la causa esatta, un contesto pulito e una regola esplicita nel prompt:
+    \emph{non far sparire il crash con un oggetto fittizio; superare i test non basta}.
+    Ciononostante, la sua prima proposta restituisce di fatto una mappa vuota; è il loop di
+    validazione, rieseguendo la suite, a respingerla con \texttt{expected null, but was:<\{\}>}.
+    È il test a fissare il comportamento atteso; l'LLM legge la traccia e corregge in \texttt{null}:
 \begin{lstlisting}[language=Java]
 public Map<String, Integer> getHeaderMap() {
     return this.headerMap == null ? null : new LinkedHashMap<>(this.headerMap);
@@ -168,11 +188,11 @@ public Map<String, Integer> getHeaderMap() {
 \end{enumerate}
 
 Questa patch ottiene esattamente lo stesso risultato della correzione applicata nella realtà
-dagli sviluppatori di Apache Commons CSV. La differenza rispetto a VibeRepair non sta nel
-\emph{risultato}, identico, ma nelle \textbf{garanzie}: il guasto è localizzato in modo
-autonomo e la causa è dimostrata come catena formale, non inferita; e la trappola della mappa
-vuota non viene evitata per fortuna o per bravura, ma \emph{scartata esplicitamente} da un loop
-di validazione guidato da una regola sul contratto.
+dagli sviluppatori di Apache Commons CSV. La differenza, in definitiva, sta negli \textbf{input}: 
+VibeRepair esige che il guasto sia
+\emph{già localizzato}; HybridRepair parte dagli stessi test e dal codice e la localizzazione,
+con la catena causale, la \emph{produce}. Richiede cioè meno informazioni in ingresso e ne
+restituisce di più, per dimostrazione, non per inferenza, e in modo riproducibile.
 
 \subsubsection{Il confronto}
 
@@ -209,6 +229,6 @@ istruttivo. Il vero spartiacque non è ``IA contro ibrido'' in termini di test s
 ingenuo o puramente code-centric cadrebbe facilmente. Ciò che protegge da quella trappola non è
 quanto è ``intelligente'' l'IA, ma la \textbf{qualità delle informazioni} e il rigore del
 processo: VibeRepair ricostruisce l'intento \emph{inferendo} una specifica; HybridRepair lo
-\emph{garantisce} con una diagnosi formale e autonoma e con un controllo esplicito del contratto.
+\emph{garantisce} con una diagnosi formale e autonoma e con una validazione che riesegue i test.
 La differenza, in definitiva, è nel \textit{livello di garanzia}, inferenza contro
 dimostrazione, localizzazione fornita contro localizzazione autonoma, in modo riproducibile.

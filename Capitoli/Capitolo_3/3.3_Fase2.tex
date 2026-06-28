@@ -154,8 +154,8 @@ parole chiave Java (\texttt{class}, \texttt{interface}, \texttt{return}).
 \item \textbf{Metodi pubblici della classe.} Le firme complete (modificatori, tipo di ritorno, nome, parametri),
 inclusi i costruttori pubblici e protetti, garantiscono che il modello invochi solo metodi realmente esistenti e
 accessibili; una deduplicazione evita che metodi ripetuti nelle classi anonime inquinino il prompt.
-\item \textbf{Tipi importati.} Gli \texttt{import} espongono il namespace dei tipi utilizzabili --- impedendo
-proposte di classi non importate --- e segnalano la versione delle dipendenze in uso (es. \texttt{commons.lang}
+\item \textbf{Tipi importati.} Gli \texttt{import} espongono il namespace dei tipi utilizzabili, impedendo
+proposte di classi non importate, e segnalano la versione delle dipendenze in uso (es. \texttt{commons.lang}
 contro la variante \texttt{lang3}), orientando verso costrutti compatibili.
 \item \textbf{Variabili locali nel metodo difettoso.} È la categoria a maggior specificità contestuale:
 limitata al corpo del metodo coinvolto nel difetto, previene i conflitti di scoping costringendo il modello a
@@ -164,8 +164,8 @@ riutilizzare variabili già dichiarate, anziché re-inizializzarle o introdurre 
 
 Oltre alle quattro categorie di vocabolario, l'\textit{Ingredient Forge} rileva anche le \textbf{località gemelle}
 (\texttt{sibling\_occurrences}): altre posizioni nella stessa classe in cui ricorre \emph{verbatim} l'espressione
-che provoca il crash. Quando lo stesso difetto latente è replicato in metodi ``specchio'' --- come nel bug
-JacksonDatabind-80, dove era stata corretta una sola delle due occorrenze --- una patch limitata alla riga di
+che provoca il crash. Quando lo stesso difetto latente è replicato in metodi ``specchio'', come nel bug
+JacksonDatabind-80, dove era stata corretta una sola delle due occorrenze una patch limitata alla riga di
 crash resterebbe parziale. Per questo le occorrenze gemelle non confluiscono nel blocco di vocabolario, ma in una
 sezione di avviso dedicata (\emph{Suspect twin locations}) che invita il modello a correggerle tutte.
 
@@ -401,7 +401,7 @@ prima del Task sfrutta il \textit{recency bias} dei Transformer \cite{zhao2021ca
     \item \textit{Minimal Fix}: la più piccola alterazione logica che risolve il problema, in linguaggio naturale
     e senza scrivere codice;
     \item \textit{Fix Locations}: per ogni località della catena causale (e ogni possibile gemella) se la patch
-    deve toccarla e perché --- una correzione che zittisce il crash ma lascia irrisolta una causa a monte è invalida.
+    deve toccarla e perché, una correzione che zittisce il crash ma lascia irrisolta una causa a monte è invalida.
 \end{itemize}
 La separazione tramite delimitatori impedisce la sovrapposizione tra contesto e istruzioni \cite{white2023prompt};
 l'incapsulamento della risposta in tag pseudo-XML (\texttt{<flawed\_behavior>}, ecc.) applica il \textit{format
