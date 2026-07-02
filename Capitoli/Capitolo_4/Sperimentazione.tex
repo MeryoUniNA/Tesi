@@ -586,3 +586,30 @@ propagazione cross-method) si confermano su un campione più ampio e su altre ca
   vantaggio strutturale a suo favore: il fatto che HybridRepair superi comunque VibeRepair in queste
   condizioni rende il risultato comparativo più robusto.
 \end{itemize}
+
+% ─────────────────────────────────────────────
+\section{Conclusioni}
+
+Questa tesi è nata da un problema concreto dell'\emph{Automated Program Repair}: i sistemi
+basati esclusivamente su Large Language Models generano patch a partire da una localizzazione
+del difetto assunta come nota, mentre gli approcci puramente analitici faticano a sintetizzare
+il codice della correzione. HybridRepair unisce i due mondi, facendo precedere la generazione
+della patch da una localizzazione causale autonoma (LogicFL) e da una guida semantica
+(SpecReason), così da orientare il modello verso la causa radice del bug anziché verso
+correzioni superficiali.
+
+La sperimentazione su 37 bug NullPointerException di Defects4J conferma la validità
+dell'approccio. HybridRepair genera patch plausibili per il 59,5\% dei bug e patch
+semanticamente valide per il 40,5\%, superando VibeRepair sullo stesso dataset (37,8\%).
+Il contributo principale non sta però nel margine numerico, bensì nelle condizioni in cui è
+ottenuto: HybridRepair raggiunge questo risultato \emph{senza} Perfect Fault Localization,
+localizzando il difetto in autonomia, mentre VibeRepair assume noto a priori il punto del bug.
+L'analisi qualitativa mostra inoltre che i due sistemi sono complementari e che la guida
+causale rende HybridRepair particolarmente efficace sui bug multi-punto con propagazione
+\emph{cross-method}, dove la sola inferenza dai test fallenti non basta.
+
+I limiti del lavoro e le possibili estensioni sono discussi rispettivamente nelle sezioni
+\emph{Threats to Validity} e Direzioni di miglioramento (Sezione~\ref{subsec:direzioni-miglioramento}):
+il rafforzamento dell'oracolo di test, una validazione critica indipendente dal modello
+generatore e l'estensione del dataset a categorie di difetti diverse rappresentano le direzioni
+più promettenti per consolidare i risultati qui presentati.
